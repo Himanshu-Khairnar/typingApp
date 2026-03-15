@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTypingStore } from "@/lib/typing-store";
 
 export type CharState = "untyped" | "correct" | "incorrect";
 
-export function useTypingEngine(words: string[]) {
+export function useTypingEngine(
+  words: string[],
+  { onKeystroke }: { onKeystroke?: (key: string, isCorrect: boolean) => void } = {},
+) {
   const text = useMemo(() => words.join(" "), [words]);
   const typed = useTypingStore((state) => state.typed);
   const setTyped = useTypingStore((state) => state.setTyped);
@@ -18,9 +21,21 @@ export function useTypingEngine(words: string[]) {
   const tick = useTypingStore((state) => state.tick);
   const reset = useTypingStore((state) => state.reset);
 
+  // Cumulative error tracking — never decreases when corrections are made
+  const totalKeystrokesRef = useRef(0);
+  const totalErrorsRef = useRef(0);
+
   useEffect(() => {
     setText(text);
   }, [text, setText]);
+
+  // Reset counters when a new test starts
+  useEffect(() => {
+    if (startedAt === null) {
+      totalKeystrokesRef.current = 0;
+      totalErrorsRef.current = 0;
+    }
+  }, [startedAt]);
 
   const handleInputChange = useCallback(
     (value: string) => {
@@ -33,6 +48,27 @@ export function useTypingEngine(words: string[]) {
         return;
       }
 
+      // Block backspace past a correctly completed word
+      if (next.length < typed.length) {
+        const removedIdx = next.length;
+        if (text[removedIdx] === " " && typed[removedIdx] === " ") {
+          const wordStart = text.lastIndexOf(" ", removedIdx - 1) + 1;
+          const wordCorrect = text.slice(wordStart, removedIdx).split("").every((c, i) => typed[wordStart + i] === c);
+          if (wordCorrect) return;
+        }
+      }
+
+      // Fire keystroke callback and track errors when a character is added
+      if (next.length > typed.length) {
+        const idx = typed.length;
+        const newChar = next[idx];
+
+        const isCorrect = next[idx] === text[idx];
+        totalKeystrokesRef.current += 1;
+        if (!isCorrect) totalErrorsRef.current += 1;
+        onKeystroke?.(newChar, isCorrect);
+      }
+
       // Update typed value
       setTyped(next);
 
@@ -41,7 +77,7 @@ export function useTypingEngine(words: string[]) {
         start();
       }
     },
-    [reset, setTyped, start, text, text.length, typed.length, isRunning],
+    [reset, setTyped, start, text, text.length, typed.length, isRunning, onKeystroke],
   );
 
   const charStates = useMemo<CharState[]>(
@@ -77,9 +113,13 @@ export function useTypingEngine(words: string[]) {
 
   const minutes = Math.max(elapsedMs / 60000, 1 / 600);
   const grossWpm = typed.length / 5 / minutes;
-  const netWpm = Math.max(grossWpm - totals.incorrect / minutes, 0);
+  // Net WPM = correct chars / 5 / minutes — corrected mistakes reduce speed via time, not a penalty
+  const netWpm = Math.max(totals.correct / 5 / minutes, 0);
+  // Accuracy = cumulative (never improves by fixing mistakes)
   const accuracy =
-    typed.length === 0 ? 100 : (totals.correct / typed.length) * 100;
+    totalKeystrokesRef.current === 0
+      ? 100
+      : ((totalKeystrokesRef.current - totalErrorsRef.current) / totalKeystrokesRef.current) * 100;
   const progress = text.length === 0 ? 0 : (typed.length / text.length) * 100;
 
   const racePayload = useMemo(
