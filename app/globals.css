@@ -174,3 +174,15 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+
+.typing-caret {
+  transition: left 50ms linear;
+}
+
+.typing-caret-blink {
+  animation: caret-blink 1.2s step-start infinite;
+}

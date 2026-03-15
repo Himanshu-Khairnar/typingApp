@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { getSupabaseClient } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
 
 type PlayerPayload = {
   id: string
@@ -31,10 +31,7 @@ export function useRaceBroadcast({
   payload: Omit<PlayerPayload, "id" | "updatedAt">
   enabled: boolean
 }): BroadcastState {
-  const supabase = getSupabaseClient()
-  const channelRef = useRef<ReturnType<NonNullable<typeof supabase>["channel"]> | null>(
-    null
-  )
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const [players, setPlayers] = useState<PlayerPayload[]>([])
   const [isConnected, setIsConnected] = useState(false)
 
@@ -44,7 +41,7 @@ export function useRaceBroadcast({
   }, [roomCode])
 
   useEffect(() => {
-    if (!supabase || !channelName || !enabled) {
+    if (!channelName || !enabled) {
       setIsConnected(false)
       return
     }
@@ -72,7 +69,7 @@ export function useRaceBroadcast({
       setPlayers([])
       setIsConnected(false)
     }
-  }, [channelName, enabled, supabase])
+  }, [channelName, enabled])
 
   useEffect(() => {
     if (!enabled || !channelRef.current) return
