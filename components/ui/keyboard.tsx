@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useAppSettings } from "@/lib/app-settings";
 import {
   IconArrowNarrowLeft,
   IconBrightnessDown,
@@ -99,6 +100,7 @@ export default Keyboard;
 
 interface KeyboardContextType {
   themeName: KeyboardThemeName;
+  isDark: boolean;
   pressedKeys: Set<string>;
   lastPressedKey: string | null;
   triggerPointerHaptic: () => void;
@@ -140,6 +142,7 @@ function KeyboardProvider({
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const { trigger } = useWebHaptics();
+  const { isDark } = useAppSettings();
 
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set());
   const [lastPressedKey, setLastPressedKey] = useState<string | null>(null);
@@ -356,6 +359,7 @@ function KeyboardProvider({
     <KeyboardContext.Provider
       value={{
         themeName: theme,
+        isDark,
         pressedKeys,
         lastPressedKey,
         triggerPointerHaptic,
@@ -652,11 +656,12 @@ interface KeyProps {
 }
 
 function Key({ width = 50, children, className, keyCode }: KeyProps) {
-  const { themeName, pressedKeys, pressKey, releaseKey, triggerPointerHaptic } =
+  const { themeName, isDark, pressedKeys, pressKey, releaseKey, triggerPointerHaptic } =
     useKeyboardContext();
   const isPressed = keyCode ? pressedKeys.has(keyCode) : false;
   const keyVariantSlot = resolveKeyVariant(themeName, keyCode);
-  const keyVariant = KEYBOARD_THEMES[themeName].variants[keyVariantSlot];
+  const themeVariant = KEYBOARD_THEMES[themeName].variants[keyVariantSlot];
+  const keyVariant = themeVariant;
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!keyCode || event.button !== 0 || isPressed) {
@@ -900,8 +905,8 @@ const KEYBOARD_THEMES: Record<KeyboardThemeName, KeyboardThemeDefinition> = {
   classic: {
     variants: {
       accent: { bg: "#F57644", text: "rgba(0,0,0,0.5)" },
-      dark: { bg: "#737373", text: "rgba(255,255,255,0.7)" },
-      light: { bg: "#F5F5F5", text: "rgba(0,0,0,0.7)" },
+      dark: { bg: "#C45A30", text: "rgba(255,255,255,0.75)" },
+      light: { bg: "#FFFFFF", text: "rgba(0,0,0,0.7)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [KEYCODE.Escape],
@@ -912,7 +917,7 @@ const KEYBOARD_THEMES: Record<KeyboardThemeName, KeyboardThemeDefinition> = {
     variants: {
       accent: { bg: "#86C8AC", text: "rgba(255,255,255,0.7)" },
       dark: { bg: "#447B82", text: "rgba(255,255,255,0.7)" },
-      light: { bg: "#EEEEEE", text: "#447B82" },
+      light: { bg: "#FFFFFF", text: "rgba(0,0,0,0.7)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [
@@ -929,8 +934,8 @@ const KEYBOARD_THEMES: Record<KeyboardThemeName, KeyboardThemeDefinition> = {
   royal: {
     variants: {
       accent: { bg: "#E4D440", text: "rgba(0,0,0,0.7)" },
-      dark: { bg: "#3A3B35", text: "rgba(255,255,255,0.7)" },
-      light: { bg: "#324974", text: "rgba(255,255,255,0.7)" },
+      dark: { bg: "#3D3C20", text: "rgba(228,212,64,0.7)" },
+      light: { bg: "#FFFFFF", text: "rgba(0,0,0,0.7)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [
@@ -947,8 +952,8 @@ const KEYBOARD_THEMES: Record<KeyboardThemeName, KeyboardThemeDefinition> = {
   dolch: {
     variants: {
       accent: { bg: "#D73E42", text: "rgba(0,0,0,0.7)" },
-      dark: { bg: "#3E3B4C", text: "rgba(255,255,255,0.7)" },
-      light: { bg: "#4F5E78", text: "rgba(255,255,255,0.7)" },
+      dark: { bg: "#4A2030", text: "rgba(215,62,66,0.65)" },
+      light: { bg: "#FFFFFF", text: "rgba(0,0,0,0.7)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [KEYCODE.Escape, KEYCODE.Enter, KEYCODE.Space],
@@ -959,7 +964,7 @@ const KEYBOARD_THEMES: Record<KeyboardThemeName, KeyboardThemeDefinition> = {
     variants: {
       accent: { bg: "#C94E41", text: "rgba(255,255,255,0.7)" },
       dark: { bg: "#893D36", text: "rgba(255,255,255,0.7)" },
-      light: { bg: "#EFEFEF", text: "rgba(0,0,0,0.7)" },
+      light: { bg: "#FFFFFF", text: "rgba(0,0,0,0.7)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [KEYCODE.Escape, KEYCODE.Enter],
@@ -968,9 +973,9 @@ const KEYBOARD_THEMES: Record<KeyboardThemeName, KeyboardThemeDefinition> = {
   },
   scarlet: {
     variants: {
-      accent: { bg: "#E1E1E1", text: "#8F4246" },
+      accent: { bg: "#F0C4C6", text: "#8F4246" },
       dark: { bg: "#D5868A", text: "rgba(255,255,255,0.7)" },
-      light: { bg: "#E4D7D7", text: "#8F4246" },
+      light: { bg: "#FFFFFF", text: "rgba(0,0,0,0.7)" },
     },
     keyVariantOverrides: buildKeyVariantOverrides({
       accent: [KEYCODE.Escape, KEYCODE.Enter],

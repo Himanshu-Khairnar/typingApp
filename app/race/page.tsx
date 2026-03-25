@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
 
 function generateRoomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -19,6 +20,7 @@ function generateRoomCode() {
 export default function RaceLobby() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const ACCENT = THEME_COLORS[useAppSettings().theme].primary;
   const [joinCode, setJoinCode] = useState("");
 
   const playerName = user?.user_metadata?.username ?? user?.email?.split("@")[0] ?? "Anonymous";
@@ -66,7 +68,7 @@ export default function RaceLobby() {
             </div>
             <Button
               className="mt-4 w-full font-semibold text-white hover:opacity-90"
-              style={{ backgroundColor: "#F57644" }}
+              style={{ backgroundColor: ACCENT }}
               onClick={handleCreate}
               disabled={loading || !user}
             >

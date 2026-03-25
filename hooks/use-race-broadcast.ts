@@ -32,6 +32,8 @@ export function useRaceBroadcast({
   enabled: boolean
 }): BroadcastState {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const payloadRef = useRef(payload)
+  payloadRef.current = payload
   const [players, setPlayers] = useState<PlayerPayload[]>([])
   const [isConnected, setIsConnected] = useState(false)
 
@@ -79,14 +81,14 @@ export function useRaceBroadcast({
         event: "progress",
         payload: {
           id: playerId,
-          ...payload,
+          ...payloadRef.current,
           updatedAt: Date.now(),
         },
       })
     }, 500)
 
     return () => window.clearInterval(interval)
-  }, [enabled, payload, playerId])
+  }, [enabled, playerId])
 
   return { players, isConnected }
 }

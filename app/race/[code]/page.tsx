@@ -1,21 +1,19 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { Copy, Check, Flag, Crown, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { useRaceRoom, type RacePlayer, type RaceConfig } from "@/hooks/use-race-room";
 import { SiteNavbar } from "@/components/site-navbar";
-import { useTypingEngine } from "@/hooks/use-typing-engine";
+import { useTypingEngine, useTypingTimer } from "@/hooks/use-typing-engine";
 import { generateText } from "@/lib/words";
 import { cn } from "@/lib/utils";
 import { Keyboard } from "@/components/ui/keyboard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useAppSettings } from "@/lib/app-settings";
+import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
 import { useAuth } from "@/hooks/use-auth";
-
-const ACCENT = "#F57644";
 
 function generatePlayerId() {
   return `p_${Math.random().toString(36).slice(2, 10)}`;
@@ -32,6 +30,7 @@ function fmtTime(ms: number) {
 // Race Track
 // ─────────────────────────────────────────────────────────────────────────────
 function RaceTrack({ players, myId }: { players: RacePlayer[]; myId: string }) {
+  const ACCENT = THEME_COLORS[useAppSettings().theme].primary;
   if (!players.length) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground animate-pulse">
@@ -89,6 +88,7 @@ function Results({ players, myId, onRaceAgain, isHost }: {
   onRaceAgain: () => void;
   isHost: boolean;
 }) {
+  const ACCENT = THEME_COLORS[useAppSettings().theme].primary;
   const ranked = [...players]
     .sort((a, b) => {
       if (a.finishedAt && b.finishedAt) return a.finishedAt - b.finishedAt;
@@ -190,6 +190,8 @@ function TypingArea({ words, phase, onProgress }: {
   phase: "lobby" | "countdown" | "racing" | "finished";
   onProgress: (data: { progress: number; netWpm: number; grossWpm: number; accuracy: number; finishedAt: number | null }) => void;
 }) {
+  const ACCENT = THEME_COLORS[useAppSettings().theme].primary;
+  const elapsedMs = useTypingTimer();
   const inputRef  = useRef<HTMLInputElement | null>(null);
   const textRef   = useRef<HTMLDivElement | null>(null);
   const spanRefs  = useRef<(HTMLSpanElement | null)[]>([]);
@@ -199,11 +201,14 @@ function TypingArea({ words, phase, onProgress }: {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewportOffsetRef = useRef(0);
   const finishedReported = useRef(false);
+  const blinkResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { text, typed, currentIndex, isComplete, isFocused, setFocused, handleInputChange, reset, elapsedMs, grossWpm, netWpm, accuracy, progress } = useTypingEngine(words);
+  const { text, typed, currentIndex, isComplete, isFocused, setFocused, handleInputChange, reset, grossWpm, netWpm, accuracy, progress } = useTypingEngine(words);
 
   const statsRef = useRef({ progress, netWpm, grossWpm, accuracy });
   statsRef.current = { progress, netWpm, grossWpm, accuracy };
+
+  useEffect(() => () => { if (blinkResumeTimer.current) clearTimeout(blinkResumeTimer.current); }, []);
 
   useEffect(() => {
     if (phase === "racing") {
@@ -212,6 +217,13 @@ function TypingArea({ words, phase, onProgress }: {
       spanRefs.current = [];
       wordRefs.current = [];
       viewportOffsetRef.current = 0;
+      // Skip scroll animation on reset
+      if (textRef.current) {
+        textRef.current.style.transition = "none";
+        textRef.current.style.transform = "";
+        textRef.current.offsetHeight;
+        textRef.current.style.transition = "";
+      }
       reset(text);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
@@ -231,6 +243,16 @@ function TypingArea({ words, phase, onProgress }: {
       onProgress({ progress: 100, netWpm, grossWpm, accuracy, finishedAt: Date.now() });
     }
   }, [phase, isComplete, netWpm, grossWpm, accuracy, onProgress]);
+
+  // Caret blink management — stop on keypress, resume after 600ms idle
+  const onInputChange = useCallback((value: string) => {
+    handleInputChange(value);
+    caretRef.current?.classList.remove("typing-caret-blink");
+    if (blinkResumeTimer.current) clearTimeout(blinkResumeTimer.current);
+    blinkResumeTimer.current = setTimeout(() => {
+      caretRef.current?.classList.add("typing-caret-blink");
+    }, 600);
+  }, [handleInputChange]);
 
   // Imperative caret + char updates
   useLayoutEffect(() => {
@@ -307,7 +329,17 @@ function TypingArea({ words, phase, onProgress }: {
       }
       ci = wEnd + 1;
     }
-  });
+
+    // Future line fading — dim lines beyond current + next
+    const lineH = spanRefs.current[0]?.getBoundingClientRect().height ?? 36;
+    for (let wi = 0; wi < wordList.length; wi++) {
+      const wordSpan = wordRefs.current[wi];
+      if (!wordSpan) continue;
+      const wordTop = wordSpan.offsetTop;
+      const lineIdx = Math.floor((wordTop - newOffset) / lineH);
+      wordSpan.style.opacity = lineIdx > 1 ? "0.4" : "";
+    }
+  }, [typed, currentIndex, text]);
 
   const isDisabled = phase !== "racing";
 
@@ -338,7 +370,7 @@ function TypingArea({ words, phase, onProgress }: {
           className="fixed -top-full -left-full h-0 w-0 opacity-0 pointer-events-none"
           value={typed}
           disabled={isDisabled}
-          onChange={(e) => handleInputChange(e.target.value)}
+          onChange={(e) => onInputChange(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
@@ -347,7 +379,7 @@ function TypingArea({ words, phase, onProgress }: {
               e.preventDefault();
               const trimmed = typed.trimEnd();
               const lastSpace = trimmed.lastIndexOf(" ");
-              handleInputChange(lastSpace === -1 ? "" : typed.slice(0, lastSpace + 1));
+              onInputChange(lastSpace === -1 ? "" : typed.slice(0, lastSpace + 1));
             }
           }}
           autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
@@ -361,7 +393,7 @@ function TypingArea({ words, phase, onProgress }: {
         )}
 
         <div className="relative h-[6rem] overflow-hidden">
-          <div ref={textRef} className="relative">
+          <div ref={textRef} className="text-viewport">
             {(() => {
               const wordList = text.split(" ");
               let charIndex = 0;
@@ -397,7 +429,7 @@ function TypingArea({ words, phase, onProgress }: {
         {/* Caret */}
         <div
           ref={caretRef}
-          className={cn("pointer-events-none absolute w-0.5 rounded-full transition-opacity", isFocused && !isDisabled ? "opacity-100 animate-caret-blink" : "opacity-0")}
+          className={cn("pointer-events-none absolute w-0.5 rounded-full typing-caret typing-caret-blink", isFocused && !isDisabled ? "opacity-100" : "opacity-0")}
           style={{ backgroundColor: ACCENT }}
         />
       </div>
@@ -419,11 +451,12 @@ function TypingArea({ words, phase, onProgress }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────────────────────────────────────
-function ToggleGroup<T extends string>({ label, options, value, onChange }: {
+function ToggleGroup<T extends string>({ label, options, value, onChange, accent }: {
   label: string;
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  accent?: string;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -436,7 +469,7 @@ function ToggleGroup<T extends string>({ label, options, value, onChange }: {
                 ? "text-white border-transparent"
                 : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted",
             )}
-            style={value === o.value ? { backgroundColor: "#F57644", borderColor: "#F57644" } : undefined}
+            style={value === o.value ? { backgroundColor: accent, borderColor: accent } : undefined}
           >{o.label}</button>
         ))}
       </div>
@@ -468,6 +501,7 @@ export default function RaceRoomPage() {
   const [copied, setCopied]     = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const { isMuted, theme } = useAppSettings();
+  const ACCENT = THEME_COLORS[theme].primary;
 
   const { players, phase, countdown, raceSeed, raceConfig, isConnected, isRoomFull, broadcastProgress, updateConfig, startRace, resetRace, endRace } =
     useRaceRoom({ roomCode, playerId, playerName, isHost: isHost && !!user });
@@ -635,18 +669,18 @@ export default function RaceRoomPage() {
             {isHost ? (
               <div className="px-5 py-4 space-y-3">
                 <ToggleGroup label="Mode" value={raceMode} onChange={(v) => { setRaceMode(v); updateConfig({ mode: v, wordCount, duration, punctuation, numbers }); }}
-                  options={[{ value: "words", label: "Words" }, { value: "time", label: "Time" }]} />
+                  options={[{ value: "words", label: "Words" }, { value: "time", label: "Time" }]} accent={ACCENT} />
                 {raceMode === "words" ? (
                   <ToggleGroup label="Word count" value={String(wordCount) as never} onChange={(v) => { setWordCount(Number(v)); updateConfig({ mode: raceMode, wordCount: Number(v), duration, punctuation, numbers }); }}
-                    options={[10, 25, 50, 100].map((n) => ({ value: String(n) as never, label: String(n) }))} />
+                    options={[10, 25, 50, 100].map((n) => ({ value: String(n) as never, label: String(n) }))} accent={ACCENT} />
                 ) : (
                   <ToggleGroup label="Duration" value={String(duration) as never} onChange={(v) => { setDuration(Number(v)); updateConfig({ mode: raceMode, wordCount, duration: Number(v), punctuation, numbers }); }}
-                    options={[15, 30, 60, 120].map((s) => ({ value: String(s) as never, label: `${s}s` }))} />
+                    options={[15, 30, 60, 120].map((s) => ({ value: String(s) as never, label: `${s}s` }))} accent={ACCENT} />
                 )}
                 <ToggleGroup label="Punctuation" value={punctuation ? "on" : "off"} onChange={(v) => { const val = v === "on"; setPunctuation(val); updateConfig({ mode: raceMode, wordCount, duration, punctuation: val, numbers }); }}
-                  options={[{ value: "on", label: "On" }, { value: "off", label: "Off" }]} />
+                  options={[{ value: "on", label: "On" }, { value: "off", label: "Off" }]} accent={ACCENT} />
                 <ToggleGroup label="Numbers" value={numbers ? "on" : "off"} onChange={(v) => { const val = v === "on"; setNumbers(val); updateConfig({ mode: raceMode, wordCount, duration, punctuation, numbers: val }); }}
-                  options={[{ value: "on", label: "On" }, { value: "off", label: "Off" }]} />
+                  options={[{ value: "on", label: "On" }, { value: "off", label: "Off" }]} accent={ACCENT} />
               </div>
             ) : (
               <div className="px-5 py-6 space-y-3">

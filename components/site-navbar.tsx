@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useAppSettings } from "@/lib/app-settings";
+import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,8 +33,8 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const { isDark, isMuted, toggleDark, toggleMute } = useAppSettings();
-  const primaryColor = "#F57644";
+  const { isDark, isMuted, toggleDark, toggleMute, theme } = useAppSettings();
+  const primaryColor = THEME_COLORS[theme].primary;
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
@@ -119,47 +119,43 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
           )}
         </Button>
 
-        {!loading && (
-          <>
-            <div className="mx-1 h-5 w-px bg-border" aria-hidden />
+        <div className="mx-1 h-5 w-px bg-border" aria-hidden />
 
-            {user ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 p-0">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback
-                        className="text-xs font-bold text-white"
-                        style={{ backgroundColor: primaryColor }}
-                      >
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel className="font-normal">
-                    <p className="font-semibold text-sm">{username}</p>
-                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href="/profile" className="cursor-pointer">
-                      <User className="mr-2 h-4 w-4" /> Profile
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive cursor-pointer">
-                    <LogOut className="mr-2 h-4 w-4" /> Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/auth">Sign in</Link>
+        {user ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 p-0">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback
+                    className="text-xs font-bold text-white"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
               </Button>
-            )}
-          </>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="font-normal">
+                <p className="font-semibold text-sm">{username}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/profile" className="cursor-pointer">
+                  <User className="mr-2 h-4 w-4" /> Profile
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSignOut} className="text-destructive cursor-pointer">
+                <LogOut className="mr-2 h-4 w-4" /> Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button size="sm" asChild style={{ backgroundColor: primaryColor }} className="text-white hover:opacity-90">
+            <Link href="/auth">Sign in</Link>
+          </Button>
         )}
       </div>
     </nav>

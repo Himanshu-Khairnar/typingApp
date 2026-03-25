@@ -20,11 +20,10 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
 import type { Database } from "@/lib/database.types";
 
 type Result = Database["public"]["Tables"]["results"]["Row"];
-
-const ACCENT = "#F57644"; // matches classic theme primary used in typing test results
 
 function formatTime(ms: number) {
   const s = Math.floor(ms / 1000);
@@ -44,6 +43,8 @@ function StatCard({
 }: {
   icon: React.ElementType; label: string; value: string; sub?: string; accent?: boolean;
 }) {
+  const { theme } = useAppSettings();
+  const ACCENT = THEME_COLORS[theme].primary;
   return (
     <Card style={accent ? { borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}08` } : undefined}>
       <CardContent className="p-5">
@@ -67,6 +68,8 @@ function StatCard({
 
 export default function ProfilePage() {
   const { user, loading } = useAuth();
+  const { theme } = useAppSettings();
+  const ACCENT = THEME_COLORS[theme].primary;
   const router = useRouter();
   const [results, setResults]   = useState<Result[]>([]);
   const [fetching, setFetching] = useState(true);

@@ -180,9 +180,13 @@
 }
 
 .typing-caret {
-  transition: left 50ms linear;
+  transition: left 100ms ease, top 100ms ease;
 }
 
 .typing-caret-blink {
   animation: caret-blink 1.2s step-start infinite;
+}
+
+.text-viewport {
+  transition: transform 150ms ease-out;
 }

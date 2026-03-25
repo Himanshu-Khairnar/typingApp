@@ -3,6 +3,27 @@ import { useTypingStore } from "@/lib/typing-store";
 
 export type CharState = "untyped" | "correct" | "incorrect";
 
+// ---------------------------------------------------------------------------
+// Separate timer hook — only components that display elapsed time should call
+// this. The typing area itself does NOT need to re-render on every 100ms tick.
+// ---------------------------------------------------------------------------
+export function useTypingTimer() {
+  const isRunning = useTypingStore((s) => s.isRunning);
+  const tick = useTypingStore((s) => s.tick);
+  const elapsedMs = useTypingStore((s) => s.elapsedMs);
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const timer = window.setInterval(() => tick(), 100);
+    return () => window.clearInterval(timer);
+  }, [isRunning, tick]);
+
+  return elapsedMs;
+}
+
+// ---------------------------------------------------------------------------
+// Main typing engine hook — NO elapsedMs subscription, no timer effect.
+// ---------------------------------------------------------------------------
 export function useTypingEngine(
   words: string[],
   { onKeystroke }: { onKeystroke?: (key: string, isCorrect: boolean) => void } = {},
@@ -14,11 +35,9 @@ export function useTypingEngine(
   const isFocused = useTypingStore((state) => state.isFocused);
   const setFocused = useTypingStore((state) => state.setFocused);
   const startedAt = useTypingStore((state) => state.startedAt);
-  const elapsedMs = useTypingStore((state) => state.elapsedMs);
   const isRunning = useTypingStore((state) => state.isRunning);
   const start = useTypingStore((state) => state.start);
   const stop = useTypingStore((state) => state.stop);
-  const tick = useTypingStore((state) => state.tick);
   const reset = useTypingStore((state) => state.reset);
 
   // Cumulative error tracking — never decreases when corrections are made
@@ -100,22 +119,19 @@ export function useTypingEngine(
   }, [typed, text]);
 
   useEffect(() => {
-    if (!isRunning) return;
-    const timer = window.setInterval(() => tick(), 100);
-    return () => window.clearInterval(timer);
-  }, [isRunning, tick]);
-
-  useEffect(() => {
     if (typed.length >= text.length && text.length > 0) {
       stop();
     }
   }, [stop, text.length, typed.length]);
 
+  // Non-reactive reads for WPM calculations — these are snapshot values
+  // that get recalculated on each render triggered by `typed` changes.
+  // The display components (stats bars) subscribe to elapsedMs separately
+  // via useTypingTimer() for live updates.
+  const elapsedMs = useTypingStore.getState().elapsedMs;
   const minutes = Math.max(elapsedMs / 60000, 1 / 600);
   const grossWpm = typed.length / 5 / minutes;
-  // Net WPM = correct chars / 5 / minutes — corrected mistakes reduce speed via time, not a penalty
   const netWpm = Math.max(totals.correct / 5 / minutes, 0);
-  // Accuracy = cumulative (never improves by fixing mistakes)
   const accuracy =
     totalKeystrokesRef.current === 0
       ? 100

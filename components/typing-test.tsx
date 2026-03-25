@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useTypingEngine } from "@/hooks/use-typing-engine";
+import { useTypingEngine, useTypingTimer } from "@/hooks/use-typing-engine";
 import { cn } from "@/lib/utils";
 import {
   generateText,
@@ -111,6 +111,36 @@ const Sparkline = memo(function Sparkline({ data, color }: { data: TimePoint[]; 
 });
 
 // ---------------------------------------------------------------------------
+// LiveStatsBar — isolated from main tree so timer re-renders stay cheap
+// ---------------------------------------------------------------------------
+
+const LiveStatsBar = memo(function LiveStatsBar({
+  testMode, timeLimit, text, typed, elapsedMs, zenMode, hasStarted, wpmOverTime, themeColor,
+}: {
+  testMode: TestMode; timeLimit: number; text: string; typed: string;
+  elapsedMs: number; zenMode: boolean; hasStarted: boolean;
+  wpmOverTime: TimePoint[]; themeColor: string;
+}) {
+  return (
+    <div className={cn("mb-3 flex h-8 items-center gap-5 text-sm transition-opacity duration-200", hasStarted && !zenMode ? "opacity-100" : "opacity-0 pointer-events-none")}>
+      {testMode === "time" && (
+        <span className="tabular-nums font-semibold text-foreground">
+          {Math.max(0, timeLimit - Math.floor(elapsedMs / 1000))}<span className="text-xs font-normal text-muted-foreground">s</span>
+        </span>
+      )}
+      {testMode === "words" && (
+        <span className="tabular-nums text-xs text-muted-foreground">
+          {Math.max(0, text.split(" ").length - (typed.split(" ").length - 1))} <span>words left</span>
+        </span>
+      )}
+      {wpmOverTime.length >= 2 && (
+        <Sparkline data={wpmOverTime} color={themeColor} />
+      )}
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -121,6 +151,7 @@ interface TypingTestProps {
 
 export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTestProps) {
   const { theme, isMuted } = useAppSettings();
+  const elapsedMs = useTypingTimer();
   const [seed, setSeed] = useState(() => generateSeed());
   const [roomCode, setRoomCode] = useState("");
   const [playerId] = useState(() => generatePlayerId());
@@ -186,7 +217,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   const {
     text,
     typed,
-    charStates,
     currentIndex,
     isComplete,
     isFocused,
@@ -194,7 +224,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     handleInputChange,
     reset,
     stop,
-    elapsedMs,
     grossWpm,
     netWpm,
     accuracy,
@@ -338,7 +367,17 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
       }
       ci = wEnd + 1;
     }
-  });
+
+    // Future line fading — dim lines beyond current + next
+    const lineH = spanRefs.current[0]?.getBoundingClientRect().height ?? 36;
+    for (let wi = 0; wi < wordList.length; wi++) {
+      const wordSpan = wordRefs.current[wi];
+      if (!wordSpan) continue;
+      const wordTop = wordSpan.offsetTop;
+      const lineIdx = Math.floor((wordTop - newOffset) / lineH);
+      wordSpan.style.opacity = lineIdx > 1 ? "0.4" : "";
+    }
+  }, [typed, caretStyle, testMode, hasStarted, currentIndex, text]);
 
   const imperativeCaretUpdate = useCallback(() => {
     const container = containerRef.current;
@@ -368,6 +407,13 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   }, [imperativeCaretUpdate]);
 
   const restartSame = useCallback(() => {
+    // Skip scroll animation on reset
+    if (textRef.current) {
+      textRef.current.style.transition = "none";
+      textRef.current.style.transform = "";
+      textRef.current.offsetHeight; // force reflow
+      textRef.current.style.transition = "";
+    }
     reset(text);
     spanRefs.current = [];
     wordRefs.current = [];
@@ -379,6 +425,13 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   }, [reset, text, resetHeatmap]);
 
   const newSeed = useCallback(() => {
+    // Skip scroll animation on reset
+    if (textRef.current) {
+      textRef.current.style.transition = "none";
+      textRef.current.style.transform = "";
+      textRef.current.offsetHeight; // force reflow
+      textRef.current.style.transition = "";
+    }
     setSeed(generateSeed());
     spanRefs.current = [];
     wordRefs.current = [];
@@ -822,24 +875,18 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
             aria-label="Hidden typing input"
           />
 
-          {/* Live stats bar */}
-          <div className={cn("mb-3 flex h-8 items-center gap-5 text-sm transition-opacity duration-200", hasStarted && !zenMode ? "opacity-100" : "opacity-0 pointer-events-none")}>
-            {testMode === "time" && (
-              <span className="tabular-nums font-semibold text-foreground">
-                {Math.max(0, timeLimit - Math.floor(elapsedMs / 1000))}<span className="text-xs font-normal text-muted-foreground">s</span>
-              </span>
-            )}
-            {testMode === "words" && (
-              <span className="tabular-nums text-xs text-muted-foreground">
-                {Math.max(0, text.split(" ").length - (typed.split(" ").length - 1))} <span>words left</span>
-              </span>
-            )}
-
-            {/* Live sparkline */}
-            {wpmOverTime.length >= 2 && (
-              <Sparkline data={wpmOverTime} color={themeColors.primary} />
-            )}
-          </div>
+          {/* Live stats bar — memoized so timer ticks don't re-render the whole tree */}
+          <LiveStatsBar
+            testMode={testMode}
+            timeLimit={timeLimit}
+            text={text}
+            typed={typed}
+            elapsedMs={elapsedMs}
+            zenMode={zenMode}
+            hasStarted={hasStarted}
+            wpmOverTime={wpmOverTime}
+            themeColor={themeColors.primary}
+          />
 
           {/* Unfocused overlay */}
           {!isFocused && (
