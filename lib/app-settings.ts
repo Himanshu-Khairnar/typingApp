@@ -13,13 +13,35 @@ export const THEME_COLORS: Record<KeyboardThemeName, { primary: string; primaryF
 
 export const ALL_THEMES = Object.keys(THEME_COLORS) as KeyboardThemeName[];
 
+export type MonoFont = "geist-mono" | "jetbrains-mono" | "fira-code" | "source-code-pro" | "ibm-plex-mono";
+export type SoundPack = "synth" | "cherry-mx" | "topre" | "buckling-spring";
+
+export const FONT_OPTIONS: { value: MonoFont; label: string }[] = [
+  { value: "geist-mono", label: "Geist Mono" },
+  { value: "jetbrains-mono", label: "JetBrains Mono" },
+  { value: "fira-code", label: "Fira Code" },
+  { value: "source-code-pro", label: "Source Code Pro" },
+  { value: "ibm-plex-mono", label: "IBM Plex Mono" },
+];
+
+export const SOUND_PACK_OPTIONS: { value: SoundPack; label: string }[] = [
+  { value: "synth", label: "Synth" },
+  { value: "cherry-mx", label: "Cherry MX" },
+  { value: "topre", label: "Topre" },
+  { value: "buckling-spring", label: "Buckling Spring" },
+];
+
 type AppSettings = {
   theme: KeyboardThemeName;
   isDark: boolean;
   isMuted: boolean;
+  fontFamily: MonoFont;
+  soundPack: SoundPack;
   setTheme: (theme: KeyboardThemeName) => void;
   toggleDark: () => void;
   toggleMute: () => void;
+  setFont: (font: MonoFont) => void;
+  setSoundPack: (pack: SoundPack) => void;
 };
 
 export const useAppSettings = create<AppSettings>()(
@@ -28,9 +50,13 @@ export const useAppSettings = create<AppSettings>()(
       theme: "classic",
       isDark: false,
       isMuted: false,
+      fontFamily: "geist-mono",
+      soundPack: "synth",
       setTheme: (theme) => set({ theme }),
       toggleDark: () => set((s) => ({ isDark: !s.isDark })),
       toggleMute: () => set((s) => ({ isMuted: !s.isMuted })),
+      setFont: (fontFamily) => set({ fontFamily }),
+      setSoundPack: (soundPack) => set({ soundPack }),
     }),
     { name: "typearena_settings" },
   ),

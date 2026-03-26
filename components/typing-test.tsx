@@ -28,11 +28,19 @@ import {
 } from "recharts";
 import { useLocalHistory } from "@/hooks/use-local-history";
 import { useKeyHeatmap } from "@/hooks/use-key-heatmap";
-import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
+import { useAppSettings, THEME_COLORS, type MonoFont } from "@/lib/app-settings";
 
 // ---------------------------------------------------------------------------
 // Helpers / constants
 // ---------------------------------------------------------------------------
+
+const FONT_FAMILY_MAP: Record<MonoFont, string> = {
+  "geist-mono": "var(--font-geist-mono), ui-monospace, monospace",
+  "jetbrains-mono": "var(--font-jetbrains-mono), ui-monospace, monospace",
+  "fira-code": "var(--font-fira-code), ui-monospace, monospace",
+  "source-code-pro": "var(--font-source-code-pro), ui-monospace, monospace",
+  "ibm-plex-mono": "var(--font-ibm-plex-mono), ui-monospace, monospace",
+};
 
 type CaretStyle = "beam" | "block" | "underline";
 type PerformancePoint = { netWpm: number; accuracy: number; elapsedMs: number };
@@ -150,7 +158,7 @@ interface TypingTestProps {
 }
 
 export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTestProps) {
-  const { theme, isMuted } = useAppSettings();
+  const { theme, isMuted, fontFamily } = useAppSettings();
   const elapsedMs = useTypingTimer();
   const [seed, setSeed] = useState(() => generateSeed());
   const [roomCode, setRoomCode] = useState("");
@@ -406,41 +414,48 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     return () => window.removeEventListener("resize", imperativeCaretUpdate);
   }, [imperativeCaretUpdate]);
 
-  const restartSame = useCallback(() => {
-    // Skip scroll animation on reset
+  const resetVisuals = useCallback(() => {
+    // Reset imperative DOM changes that React doesn't know about
+    for (let i = 0; i < spanRefs.current.length; i++) {
+      const span = spanRefs.current[i];
+      if (!span) continue;
+      span.className = "relative inline text-muted-foreground/50";
+      const ch = text[i];
+      if (ch !== undefined) span.textContent = ch === " " ? "\u00A0" : ch;
+    }
+    for (const wordSpan of wordRefs.current) {
+      if (wordSpan) {
+        wordSpan.className = "inline-block whitespace-nowrap";
+        wordSpan.style.opacity = "";
+      }
+    }
     if (textRef.current) {
       textRef.current.style.transition = "none";
       textRef.current.style.transform = "";
       textRef.current.offsetHeight; // force reflow
       textRef.current.style.transition = "";
     }
-    reset(text);
-    spanRefs.current = [];
-    wordRefs.current = [];
     prevTypedLenRef.current = 0;
     viewportOffsetRef.current = 0;
+  }, [text]);
+
+  const restartSame = useCallback(() => {
+    resetVisuals();
+    reset(text);
     resetHeatmap();
     setIsNewPB(false);
     inputRef.current?.focus();
-  }, [reset, text, resetHeatmap]);
+  }, [reset, text, resetHeatmap, resetVisuals]);
 
   const newSeed = useCallback(() => {
-    // Skip scroll animation on reset
-    if (textRef.current) {
-      textRef.current.style.transition = "none";
-      textRef.current.style.transform = "";
-      textRef.current.offsetHeight; // force reflow
-      textRef.current.style.transition = "";
-    }
+    resetVisuals();
     setSeed(generateSeed());
     spanRefs.current = [];
     wordRefs.current = [];
-    prevTypedLenRef.current = 0;
-    viewportOffsetRef.current = 0;
     resetHeatmap();
     setIsNewPB(false);
     inputRef.current?.focus();
-  }, [resetHeatmap]);
+  }, [resetHeatmap, resetVisuals]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -841,7 +856,8 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
         /* ---------------------------------------------------------------- */
         <div
           ref={containerRef}
-          className={cn("relative px-2 py-4 font-mono text-muted-foreground cursor-text", testMode === "code" ? "text-2xl leading-10" : "text-xl leading-9")}
+          className={cn("relative px-2 py-4 text-muted-foreground cursor-text", testMode === "code" ? "text-2xl leading-10" : "text-xl leading-9")}
+          style={{ fontFamily: FONT_FAMILY_MAP[fontFamily] }}
           onClick={focusInput}
         >
           <input

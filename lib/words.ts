@@ -368,7 +368,7 @@ const STANDALONE_NUMBERS = [
 // Types
 // ---------------------------------------------------------------------------
 
-export type TestMode = "time" | "words" | "quote" | "custom" | "code";
+export type TestMode = "time" | "words" | "quote" | "custom" | "code" | "practice";
 export type Language = "english" | "hindi" | "marathi";
 
 export interface TestConfig {

@@ -149,11 +149,6 @@ export default function ProfilePage() {
 
       <main className="mx-auto max-w-4xl px-4 pt-20 pb-16 space-y-8">
 
-        {/* Back */}
-        <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link href="/"><ArrowLeft className="mr-1.5 h-4 w-4" />Back</Link>
-        </Button>
-
         {/* Profile header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
           <Avatar className="h-20 w-20 text-2xl">

@@ -142,7 +142,7 @@ function KeyboardProvider({
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const { trigger } = useWebHaptics();
-  const { isDark } = useAppSettings();
+  const { isDark, soundPack } = useAppSettings();
 
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set());
   const [lastPressedKey, setLastPressedKey] = useState<string | null>(null);
@@ -191,23 +191,68 @@ function KeyboardProvider({
 
   const playSound = useCallback(
     (phase: KeyboardEventPhase, keyCode: string) => {
-      if (!enableSound) {
+      if (!enableSound) return;
+
+      // Non-default packs use synth sounds
+      if (soundPack !== "synth") {
+        if (phase !== "down") return;
+        try {
+          const ctx = audioContextRef.current ?? new AudioContext();
+          if (!audioContextRef.current) audioContextRef.current = ctx;
+          if (ctx.state === "suspended") void ctx.resume();
+
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+
+          if (soundPack === "cherry-mx") {
+            osc.type = "square";
+            osc.frequency.value = 1200 + Math.random() * 400;
+            gain.gain.setValueAtTime(0.04, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.04);
+          } else if (soundPack === "topre") {
+            osc.type = "sine";
+            osc.frequency.value = 280 + Math.random() * 80;
+            gain.gain.setValueAtTime(0.06, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.06);
+          } else if (soundPack === "buckling-spring") {
+            osc.type = "sawtooth";
+            osc.frequency.value = 1800 + Math.random() * 600;
+            gain.gain.setValueAtTime(0.05, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.035);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.04);
+            // Spring rattle
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.type = "square";
+            osc2.frequency.value = 700 + Math.random() * 200;
+            gain2.gain.setValueAtTime(0.03, ctx.currentTime + 0.01);
+            gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+            osc2.start(ctx.currentTime + 0.01);
+            osc2.stop(ctx.currentTime + 0.07);
+          }
+        } catch { /* ignore */ }
         return;
       }
 
+      // Default synth pack uses the audio sprite
       const audioContext = audioContextRef.current;
       const audioBuffer = audioBufferRef.current;
-      if (!audioContext || !audioBuffer) {
-        return;
-      }
+      if (!audioContext || !audioBuffer) return;
 
       const soundDef =
         phase === "down"
           ? SOUND_DEFINES_DOWN[keyCode]
           : SOUND_DEFINES_UP[keyCode];
-      if (!soundDef) {
-        return;
-      }
+      if (!soundDef) return;
 
       const [startMs, durationMs] = soundDef;
 
@@ -220,7 +265,7 @@ function KeyboardProvider({
       source.connect(audioContext.destination);
       source.start(0, startMs / 1000, durationMs / 1000);
     },
-    [enableSound],
+    [enableSound, soundPack],
   );
 
   const emitKeyEvent = useCallback(
