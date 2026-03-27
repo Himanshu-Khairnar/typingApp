@@ -31,7 +31,7 @@ export function useTypingEngine(
   const text = useMemo(() => words.join(" "), [words]);
   const typed = useTypingStore((state) => state.typed);
   const setTyped = useTypingStore((state) => state.setTyped);
-  const setText = useTypingStore((state) => state.setText);
+
   const isFocused = useTypingStore((state) => state.isFocused);
   const setFocused = useTypingStore((state) => state.setFocused);
   const startedAt = useTypingStore((state) => state.startedAt);
@@ -45,8 +45,8 @@ export function useTypingEngine(
   const totalErrorsRef = useRef(0);
 
   useEffect(() => {
-    setText(text);
-  }, [text, setText]);
+    reset(text);
+  }, [text, reset]);
 
   // Reset counters when a new test starts
   useEffect(() => {

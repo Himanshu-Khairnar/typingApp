@@ -37,8 +37,7 @@ export function useDailyChallenge() {
     }
 
     setLoading(true);
-    const { data, error } = await supabase
-      .from("daily_results")
+    const { data, error } = await (supabase.from("daily_results" as any) as any)
       .select("id")
       .eq("user_id", user.id)
       .eq("challenge_date", todayStr)
@@ -62,7 +61,7 @@ export function useDailyChallenge() {
     async (resultId: string, netWpm: number, accuracy: number) => {
       if (!user) return;
 
-      const { error } = await supabase.from("daily_results").insert({
+      const { error } = await (supabase.from("daily_results" as any) as any).insert({
         challenge_date: todayStr,
         user_id: user.id,
         result_id: resultId,
@@ -79,7 +78,7 @@ export function useDailyChallenge() {
   );
 
   const fetchLeaderboard = useCallback(async () => {
-    const { data, error } = await supabase.rpc("get_daily_leaderboard", {
+    const { data, error } = await (supabase.rpc as any)("get_daily_leaderboard", {
       p_date: todayStr,
     });
 

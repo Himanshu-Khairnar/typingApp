@@ -35,15 +35,13 @@ export function useFriends() {
     }
 
     // Fetch friendships where I'm requester
-    const { data: asRequester } = await supabase
-      .from("friendships")
+    const { data: asRequester } = await (supabase.from("friendships" as any) as any)
       .select("id, created_at, addressee_id")
       .eq("requester_id", user.id)
       .eq("status", "accepted");
 
     // Fetch friendships where I'm addressee
-    const { data: asAddressee } = await supabase
-      .from("friendships")
+    const { data: asAddressee } = await (supabase.from("friendships" as any) as any)
       .select("id, created_at, requester_id")
       .eq("addressee_id", user.id)
       .eq("status", "accepted");
@@ -62,12 +60,12 @@ export function useFriends() {
       return;
     }
 
-    const { data: profiles } = await supabase
+    const { data: profiles }: any = await supabase
       .from("profiles")
       .select("id, username, avatar_url")
       .in("id", friendIds.map((f) => f.friendUserId));
 
-    const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+    const profileMap = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
 
     const result: Friendship[] = friendIds
       .map((f) => {
@@ -90,8 +88,7 @@ export function useFriends() {
       return;
     }
 
-    const { data: rows } = await supabase
-      .from("friendships")
+    const { data: rows } = await (supabase.from("friendships" as any) as any)
       .select("id, created_at, requester_id")
       .eq("addressee_id", user.id)
       .eq("status", "pending");
@@ -101,15 +98,15 @@ export function useFriends() {
       return;
     }
 
-    const { data: profiles } = await supabase
+    const { data: profiles }: any = await supabase
       .from("profiles")
       .select("id, username, avatar_url")
-      .in("id", rows.map((r) => r.requester_id));
+      .in("id", rows.map((r: any) => r.requester_id));
 
-    const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+    const profileMap = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
 
     const result: PendingRequest[] = rows
-      .map((r) => {
+      .map((r: any) => {
         const profile = profileMap.get(r.requester_id);
         if (!profile) return null;
         return {
@@ -140,7 +137,7 @@ export function useFriends() {
       if (!user) return { error: "Not authenticated" };
 
       // Lookup profile by username
-      const { data: profile, error: lookupError } = await supabase
+      const { data: profile, error: lookupError }: any = await supabase
         .from("profiles")
         .select("id")
         .eq("username", username)
@@ -154,7 +151,7 @@ export function useFriends() {
         return { error: "Cannot send request to yourself" };
       }
 
-      const { error } = await supabase.from("friendships").insert({
+      const { error } = await (supabase.from("friendships" as any) as any).insert({
         requester_id: user.id,
         addressee_id: profile.id,
       });
@@ -169,8 +166,7 @@ export function useFriends() {
 
   const acceptRequest = useCallback(
     async (friendshipId: string) => {
-      const { error } = await supabase
-        .from("friendships")
+      const { error } = await (supabase.from("friendships" as any) as any)
         .update({ status: "accepted" })
         .eq("id", friendshipId);
 
@@ -184,8 +180,7 @@ export function useFriends() {
 
   const removeFriend = useCallback(
     async (friendshipId: string) => {
-      const { error } = await supabase
-        .from("friendships")
+      const { error } = await (supabase.from("friendships" as any) as any)
         .delete()
         .eq("id", friendshipId);
 

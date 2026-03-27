@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTypingEngine, useTypingTimer } from "@/hooks/use-typing-engine";
+import { useTypingStore } from "@/lib/typing-store";
 import { cn } from "@/lib/utils";
 import {
   generateText,
@@ -28,19 +29,12 @@ import {
 } from "recharts";
 import { useLocalHistory } from "@/hooks/use-local-history";
 import { useKeyHeatmap } from "@/hooks/use-key-heatmap";
-import { useAppSettings, THEME_COLORS, type MonoFont } from "@/lib/app-settings";
+import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
 
 // ---------------------------------------------------------------------------
 // Helpers / constants
 // ---------------------------------------------------------------------------
 
-const FONT_FAMILY_MAP: Record<MonoFont, string> = {
-  "geist-mono": "var(--font-geist-mono), ui-monospace, monospace",
-  "jetbrains-mono": "var(--font-jetbrains-mono), ui-monospace, monospace",
-  "fira-code": "var(--font-fira-code), ui-monospace, monospace",
-  "source-code-pro": "var(--font-source-code-pro), ui-monospace, monospace",
-  "ibm-plex-mono": "var(--font-ibm-plex-mono), ui-monospace, monospace",
-};
 
 type CaretStyle = "beam" | "block" | "underline";
 type PerformancePoint = { netWpm: number; accuracy: number; elapsedMs: number };
@@ -123,12 +117,13 @@ const Sparkline = memo(function Sparkline({ data, color }: { data: TimePoint[]; 
 // ---------------------------------------------------------------------------
 
 const LiveStatsBar = memo(function LiveStatsBar({
-  testMode, timeLimit, text, typed, elapsedMs, zenMode, hasStarted, wpmOverTime, themeColor,
+  testMode, timeLimit, text, typed, zenMode, hasStarted, wpmOverTime, themeColor,
 }: {
   testMode: TestMode; timeLimit: number; text: string; typed: string;
-  elapsedMs: number; zenMode: boolean; hasStarted: boolean;
+  zenMode: boolean; hasStarted: boolean;
   wpmOverTime: TimePoint[]; themeColor: string;
 }) {
+  const elapsedMs = useTypingTimer();
   return (
     <div className={cn("mb-3 flex h-8 items-center gap-5 text-sm transition-opacity duration-200", hasStarted && !zenMode ? "opacity-100" : "opacity-0 pointer-events-none")}>
       {testMode === "time" && (
@@ -149,6 +144,20 @@ const LiveStatsBar = memo(function LiveStatsBar({
 });
 
 // ---------------------------------------------------------------------------
+// TimeGuard — tiny component that detects time-up without re-rendering parent
+// ---------------------------------------------------------------------------
+function TimeGuard({ timeLimit, zenMode, testMode, onTimeUp }: {
+  timeLimit: number; zenMode: boolean; testMode: TestMode;
+  onTimeUp: () => void;
+}) {
+  const elapsedMs = useTypingTimer();
+  const typed = useTypingStore((s) => s.typed);
+  const timeIsUp = !zenMode && (testMode === "time" || testMode === "code") && elapsedMs >= timeLimit * 1000 && typed.length > 0;
+  useEffect(() => { if (timeIsUp) onTimeUp(); }, [timeIsUp, onTimeUp]);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -158,8 +167,7 @@ interface TypingTestProps {
 }
 
 export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTestProps) {
-  const { theme, isMuted, fontFamily } = useAppSettings();
-  const elapsedMs = useTypingTimer();
+  const { theme, isMuted } = useAppSettings();
   const [seed, setSeed] = useState(() => generateSeed());
   const [roomCode, setRoomCode] = useState("");
   const [playerId] = useState(() => generatePlayerId());
@@ -238,11 +246,12 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     progress,
     correctChars,
     incorrectChars,
+    elapsedMs,
     racePayload,
   } = useTypingEngine(words, { onKeystroke: handleKeystroke });
 
-  const liveStatsRef = useRef({ netWpm, accuracy, elapsedMs });
-  liveStatsRef.current = { netWpm, accuracy, elapsedMs };
+  const liveStatsRef = useRef({ netWpm, accuracy });
+  liveStatsRef.current = { netWpm, accuracy };
 
   const hasStarted = typed.length > 0;
 
@@ -457,10 +466,13 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     inputRef.current?.focus();
   }, [resetHeatmap, resetVisuals]);
 
+  const lastKeyRef = useRef("");
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); window.location.href = "/"; return; }
-      if (event.shiftKey && event.key === "Tab") { event.preventDefault(); restartSame(); return; }
+      if (event.key === "Tab") { event.preventDefault(); lastKeyRef.current = "Tab"; return; }
+      if (event.key === "Enter" && lastKeyRef.current === "Tab") { event.preventDefault(); lastKeyRef.current = ""; restartSame(); return; }
+      lastKeyRef.current = event.key;
       if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1 && document.activeElement !== inputRef.current) {
         inputRef.current?.focus();
       }
@@ -469,19 +481,19 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [restartSame]);
 
-  const timeIsUp = useMemo(
-    () => !zenMode && (testMode === "time" || testMode === "code") && elapsedMs >= timeLimit * 1000 && typed.length > 0,
-    [zenMode, testMode, timeLimit, elapsedMs, typed.length],
-  );
+  const [timeIsUp, setTimeIsUp] = useState(false);
+  const handleTimeUp = useCallback(() => { setTimeIsUp(true); stop(); }, [stop]);
 
-  useEffect(() => { if (timeIsUp) stop(); }, [timeIsUp, stop]);
+  // Reset timeIsUp when starting a new test
+  useEffect(() => { if (!hasStarted) setTimeIsUp(false); }, [hasStarted]);
 
   // Sample WPM every second
 
   useEffect(() => {
     if (!hasStarted || isComplete || timeIsUp) return;
     const id = setInterval(() => {
-      const { netWpm: wpm, accuracy: acc, elapsedMs: ms } = liveStatsRef.current;
+      const ms = useTypingStore.getState().elapsedMs;
+      const { netWpm: wpm, accuracy: acc } = liveStatsRef.current;
       const second = Math.round(ms / 1000);
       if (second < 1) return;
       setWpmOverTime((prev) =>
@@ -857,7 +869,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
         <div
           ref={containerRef}
           className={cn("relative px-2 py-4 text-muted-foreground cursor-text", testMode === "code" ? "text-2xl leading-10" : "text-xl leading-9")}
-          style={{ fontFamily: FONT_FAMILY_MAP[fontFamily] }}
+
           onClick={focusInput}
         >
           <input
@@ -891,13 +903,15 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
             aria-label="Hidden typing input"
           />
 
-          {/* Live stats bar — memoized so timer ticks don't re-render the whole tree */}
+          {/* Timer guard — detects time-up without re-rendering main tree */}
+          <TimeGuard testMode={testMode} timeLimit={timeLimit} zenMode={zenMode} onTimeUp={handleTimeUp} />
+
+          {/* Live stats bar — owns the timer, isolated re-renders */}
           <LiveStatsBar
             testMode={testMode}
             timeLimit={timeLimit}
             text={text}
             typed={typed}
-            elapsedMs={elapsedMs}
             zenMode={zenMode}
             hasStarted={hasStarted}
             wpmOverTime={wpmOverTime}

@@ -16,6 +16,14 @@ export const ALL_THEMES = Object.keys(THEME_COLORS) as KeyboardThemeName[];
 export type MonoFont = "geist-mono" | "jetbrains-mono" | "fira-code" | "source-code-pro" | "ibm-plex-mono";
 export type SoundPack = "synth" | "cherry-mx" | "topre" | "buckling-spring";
 
+export const FONT_FAMILY_MAP: Record<MonoFont, string> = {
+  "geist-mono": "var(--font-geist-mono), ui-monospace, monospace",
+  "jetbrains-mono": "var(--font-jetbrains-mono), ui-monospace, monospace",
+  "fira-code": "var(--font-fira-code), ui-monospace, monospace",
+  "source-code-pro": "var(--font-source-code-pro), ui-monospace, monospace",
+  "ibm-plex-mono": "var(--font-ibm-plex-mono), ui-monospace, monospace",
+};
+
 export const FONT_OPTIONS: { value: MonoFont; label: string }[] = [
   { value: "geist-mono", label: "Geist Mono" },
   { value: "jetbrains-mono", label: "JetBrains Mono" },

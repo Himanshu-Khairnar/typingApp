@@ -20,13 +20,12 @@ export function useAchievements() {
     }
 
     setLoading(true);
-    const { data, error } = await supabase
-      .from("achievements")
+    const { data, error } = await (supabase.from("achievements" as any) as any)
       .select("badge_id")
       .eq("user_id", user.id);
 
     if (!error && data) {
-      setEarnedBadges(new Set(data.map((row) => row.badge_id)));
+      setEarnedBadges(new Set(data.map((row: any) => row.badge_id)));
     }
     setLoading(false);
   }, [user]);
@@ -50,7 +49,7 @@ export function useAchievements() {
         badge_id: badgeId,
       }));
 
-      const { error } = await supabase.from("achievements").insert(rows);
+      const { error } = await (supabase.from("achievements" as any) as any).insert(rows);
 
       if (!error) {
         const updated = new Set(earnedBadges);

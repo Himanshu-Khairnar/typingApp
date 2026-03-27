@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, User, Volume2, VolumeX, Sun, Moon, Keyboard, Flame, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useChallengeNotifications } from "@/hooks/use-challenge-notifications";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -22,7 +23,6 @@ import {
 const NAV_LINKS = [
   { label: "Type", href: "/" },
   { label: "Race", href: "/race" },
-  { label: "Daily", href: "/daily" },
   { label: "Leaderboard", href: "/leaderboard" },
 ];
 
@@ -36,10 +36,13 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { isDark, isMuted, toggleDark, toggleMute, theme, setTheme, fontFamily, setFont, soundPack, setSoundPack } = useAppSettings();
-  const primaryColor = THEME_COLORS[theme].primary;
+  const primaryColor = THEME_COLORS[theme]?.primary ?? "#F57644";
 
   const [streak, setStreak] = useState(0);
   const [pendingFriends, setPendingFriends] = useState(0);
+
+  // Listen for challenge notifications from friends
+  useChallengeNotifications();
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
@@ -48,11 +51,11 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
   // Fetch streak + pending friend requests
   useEffect(() => {
     if (!user) { setStreak(0); setPendingFriends(0); return; }
-    supabase.from("streaks").select("current_streak").eq("user_id", user.id).single()
-      .then(({ data }) => { if (data) setStreak(data.current_streak); });
-    supabase.from("friendships").select("id", { count: "exact", head: true })
+    (supabase.from("streaks" as any) as any).select("current_streak").eq("user_id", user.id).single()
+      .then(({ data }: any) => { if (data) setStreak(data.current_streak); });
+    (supabase.from("friendships" as any) as any).select("id", { count: "exact", head: true })
       .eq("addressee_id", user.id).eq("status", "pending")
-      .then(({ count }) => { if (count) setPendingFriends(count); });
+      .then(({ count }: any) => { if (count) setPendingFriends(count); });
   }, [user]);
 
   const handleSignOut = async () => {
@@ -78,7 +81,7 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
 
       {/* Center nav */}
       <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0.5">
-        {NAV_LINKS.map(({ label, href }) => {
+        {(NAV_LINKS ?? []).map(({ label, href }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
             <Link
@@ -130,7 +133,7 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">Theme</DropdownMenuLabel>
-            {ALL_THEMES.map((t) => (
+            {(ALL_THEMES ?? []).map((t) => (
               <DropdownMenuItem key={t} onClick={() => setTheme(t)} className="gap-2 text-xs capitalize">
                 <div className="h-3 w-3 rounded-full" style={{ backgroundColor: THEME_COLORS[t].primary }} />
                 {THEME_COLORS[t].label}
@@ -139,7 +142,7 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
             ))}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">Font</DropdownMenuLabel>
-            {FONT_OPTIONS.map((f) => (
+            {(FONT_OPTIONS ?? []).map((f) => (
               <DropdownMenuItem key={f.value} onClick={() => setFont(f.value)} className="text-xs">
                 {f.label}
                 {f.value === fontFamily && <span className="ml-auto text-muted-foreground">✓</span>}
@@ -147,7 +150,7 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
             ))}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">Sound</DropdownMenuLabel>
-            {SOUND_PACK_OPTIONS.map((s) => (
+            {(SOUND_PACK_OPTIONS ?? []).map((s) => (
               <DropdownMenuItem key={s.value} onClick={() => setSoundPack(s.value)} className="text-xs">
                 {s.label}
                 {s.value === soundPack && <span className="ml-auto text-muted-foreground">✓</span>}

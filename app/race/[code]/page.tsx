@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useRaceRoom, type RacePlayer, type RaceConfig } from "@/hooks/use-race-room";
 import { SiteNavbar } from "@/components/site-navbar";
 import { useTypingEngine, useTypingTimer } from "@/hooks/use-typing-engine";
+import { useTypingStore } from "@/lib/typing-store";
 import { generateText } from "@/lib/words";
 import { cn } from "@/lib/utils";
 import { Keyboard } from "@/components/ui/keyboard";
@@ -203,6 +204,14 @@ function TypingArea({ words, phase, onProgress }: {
   const finishedReported = useRef(false);
   const blinkResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Eagerly reset the store on mount / when words change — before first render reads stale typed
+  const wordsKey = useMemo(() => words.join(" "), [words]);
+  const prevWordsKeyRef = useRef("");
+  if (prevWordsKeyRef.current !== wordsKey) {
+    prevWordsKeyRef.current = wordsKey;
+    useTypingStore.getState().reset(wordsKey);
+  }
+
   const { text, typed, currentIndex, isComplete, isFocused, setFocused, handleInputChange, reset, grossWpm, netWpm, accuracy, progress } = useTypingEngine(words);
 
   const statsRef = useRef({ progress, netWpm, grossWpm, accuracy });
@@ -210,6 +219,7 @@ function TypingArea({ words, phase, onProgress }: {
 
   useEffect(() => () => { if (blinkResumeTimer.current) clearTimeout(blinkResumeTimer.current); }, []);
 
+  // Reset visual refs when entering racing phase
   useEffect(() => {
     if (phase === "racing") {
       finishedReported.current = false;
@@ -217,14 +227,12 @@ function TypingArea({ words, phase, onProgress }: {
       spanRefs.current = [];
       wordRefs.current = [];
       viewportOffsetRef.current = 0;
-      // Skip scroll animation on reset
       if (textRef.current) {
         textRef.current.style.transition = "none";
         textRef.current.style.transform = "";
         textRef.current.offsetHeight;
         textRef.current.style.transition = "";
       }
-      reset(text);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

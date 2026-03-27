@@ -27,12 +27,12 @@ async function syncToSupabase(entry: Omit<HistoryEntry, "id" | "timestamp">) {
   if (!user) return; // not logged in — skip
 
   // Ensure profile row exists (upsert so the FK never fails)
-  await supabase.from("profiles").upsert(
+  await (supabase.from("profiles") as any).upsert(
     { id: user.id, username: user.user_metadata?.username ?? user.email?.split("@")[0] ?? "anonymous" },
     { onConflict: "id", ignoreDuplicates: true },
   );
 
-  const { error } = await supabase.from("results").insert({
+  const { error } = await (supabase.from("results") as any).insert({
     user_id:        user.id,
     mode:           entry.mode,
     time_limit:     entry.timeLimit  ?? null,

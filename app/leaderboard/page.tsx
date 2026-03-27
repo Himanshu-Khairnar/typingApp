@@ -70,10 +70,11 @@ export default function LeaderboardPage() {
   const fetchLeaderboard = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.rpc("get_leaderboard", {
-        p_mode: modeFilter,
-        p_time_limit: modeFilter === "time" ? duration : 0,
-        p_period: period,
+      const periodMap: Record<Period, string> = { today: "daily", week: "weekly", all: "all" };
+      const { data, error } = await (supabase.rpc as any)("get_leaderboard", {
+        p_mode: modeFilter === "all" ? null : modeFilter,
+        p_time_limit: modeFilter === "time" ? duration : null,
+        p_period: periodMap[period],
       });
 
       if (error) {
@@ -227,7 +228,7 @@ export default function LeaderboardPage() {
                       )}
                       style={
                         isCurrentUser
-                          ? { backgroundColor: `${ACCENT}10`, ringColor: `${ACCENT}40` }
+                          ? { backgroundColor: `${ACCENT}10`, "--tw-ring-color": `${ACCENT}40` } as React.CSSProperties
                           : undefined
                       }
                     >

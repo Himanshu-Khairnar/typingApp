@@ -19,8 +19,7 @@ export function useStreak() {
     }
 
     setLoading(true);
-    const { data, error } = await supabase
-      .from("streaks")
+    const { data, error }: any = await (supabase.from("streaks" as any) as any)
       .select("current_streak, longest_streak")
       .eq("user_id", user.id)
       .maybeSingle();

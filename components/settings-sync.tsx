@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { useAppSettings, type MonoFont, type SoundPack } from "@/lib/app-settings";
+import { useAppSettings, FONT_FAMILY_MAP, type MonoFont, type SoundPack } from "@/lib/app-settings";
 import { useAuth } from "@/hooks/use-auth";
 import type { KeyboardThemeName } from "@/components/ui/keyboard";
 
@@ -22,7 +22,7 @@ export function SettingsSync() {
       .select("settings")
       .eq("id", user.id)
       .single()
-      .then(({ data }) => {
+      .then(({ data }: { data: any }) => {
         if (!data?.settings) return;
         const s = data.settings as Record<string, unknown>;
         if (s.theme && s.theme !== theme) setTheme(s.theme as KeyboardThemeName);
@@ -47,8 +47,7 @@ export function SettingsSync() {
 
     savingRef.current = true;
     const timer = setTimeout(async () => {
-      await supabase
-        .from("profiles")
+      await (supabase.from("profiles") as any)
         .update({ settings: { theme, isDark, isMuted, fontFamily, soundPack } })
         .eq("id", user.id);
       savingRef.current = false;
@@ -59,6 +58,11 @@ export function SettingsSync() {
       savingRef.current = false;
     };
   }, [user, theme, isDark, isMuted, fontFamily, soundPack]);
+
+  // Apply selected font globally to the document body
+  useEffect(() => {
+    document.body.style.fontFamily = FONT_FAMILY_MAP[fontFamily];
+  }, [fontFamily]);
 
   return null;
 }

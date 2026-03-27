@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Search, UserPlus, Users, Clock, Swords,
-  Check, X, Loader2,
+  Check, X, Loader2, Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SiteNavbar } from "@/components/site-navbar";
@@ -20,13 +20,17 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
+import { sendChallengeNotification } from "@/hooks/use-challenge-notifications";
 
-type FriendRow = {
+type FriendshipRow = {
   id: string;
-  user_id: string;
-  friend_id: string;
+  requester_id: string;
+  addressee_id: string;
   status: "pending" | "accepted";
   created_at: string;
+};
+
+type FriendRow = FriendshipRow & {
   username: string;
   best_wpm: number | null;
 };
@@ -56,6 +60,7 @@ export default function FriendsPage() {
 
   const [friends, setFriends] = useState<FriendRow[]>([]);
   const [pendingRequests, setPendingRequests] = useState<FriendRow[]>([]);
+  const [sentRequests, setSentRequests] = useState<FriendRow[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
@@ -68,31 +73,38 @@ export default function FriendsPage() {
     setLoadingFriends(true);
 
     try {
-      // Accepted friends (where I'm user_id)
+      // Accepted friends (where I'm requester)
       const { data: sentAccepted } = await supabase
-        .from("friends")
-        .select("id, user_id, friend_id, status, created_at")
-        .eq("user_id", user.id)
-        .eq("status", "accepted");
+        .from("friendships" as any)
+        .select("id, requester_id, addressee_id, status, created_at")
+        .eq("requester_id", user.id)
+        .eq("status", "accepted") as { data: FriendshipRow[] | null };
 
-      // Accepted friends (where I'm friend_id)
+      // Accepted friends (where I'm addressee)
       const { data: receivedAccepted } = await supabase
-        .from("friends")
-        .select("id, user_id, friend_id, status, created_at")
-        .eq("friend_id", user.id)
-        .eq("status", "accepted");
+        .from("friendships" as any)
+        .select("id, requester_id, addressee_id, status, created_at")
+        .eq("addressee_id", user.id)
+        .eq("status", "accepted") as { data: FriendshipRow[] | null };
 
       // Pending incoming requests
       const { data: incoming } = await supabase
-        .from("friends")
-        .select("id, user_id, friend_id, status, created_at")
-        .eq("friend_id", user.id)
-        .eq("status", "pending");
+        .from("friendships" as any)
+        .select("id, requester_id, addressee_id, status, created_at")
+        .eq("addressee_id", user.id)
+        .eq("status", "pending") as { data: FriendshipRow[] | null };
+
+      // Pending outgoing requests (sent by me)
+      const { data: outgoing } = await supabase
+        .from("friendships" as any)
+        .select("id, requester_id, addressee_id, status, created_at")
+        .eq("requester_id", user.id)
+        .eq("status", "pending") as { data: FriendshipRow[] | null };
 
       // Combine accepted friends
       const allAccepted = [...(sentAccepted ?? []), ...(receivedAccepted ?? [])];
       const friendIds = allAccepted.map((f) =>
-        f.user_id === user.id ? f.friend_id : f.user_id
+        f.requester_id === user.id ? f.addressee_id : f.requester_id
       );
 
       // Fetch profiles for friends
@@ -101,14 +113,14 @@ export default function FriendsPage() {
         const { data: profiles } = await supabase
           .from("profiles")
           .select("id, username")
-          .in("id", friendIds);
+          .in("id", friendIds) as { data: { id: string; username: string }[] | null };
 
         // Fetch best WPMs
         const { data: bestResults } = await supabase
           .from("results")
           .select("user_id, net_wpm")
           .in("user_id", friendIds)
-          .order("net_wpm", { ascending: false });
+          .order("net_wpm", { ascending: false }) as { data: { user_id: string; net_wpm: number }[] | null };
 
         const bestWpmMap: Record<string, number> = {};
         for (const r of bestResults ?? []) {
@@ -118,7 +130,7 @@ export default function FriendsPage() {
         }
 
         friendProfiles = allAccepted.map((f) => {
-          const friendId = f.user_id === user.id ? f.friend_id : f.user_id;
+          const friendId = f.requester_id === user.id ? f.addressee_id : f.requester_id;
           const profile = (profiles ?? []).find((p) => p.id === friendId);
           return {
             ...f,
@@ -129,16 +141,35 @@ export default function FriendsPage() {
       }
 
       // Fetch profiles for pending requests
-      const pendingUserIds = (incoming ?? []).map((f) => f.user_id);
+      const pendingUserIds = (incoming ?? []).map((f) => f.requester_id);
       let pendingProfiles: FriendRow[] = [];
       if (pendingUserIds.length > 0) {
         const { data: profiles } = await supabase
           .from("profiles")
           .select("id, username")
-          .in("id", pendingUserIds);
+          .in("id", pendingUserIds) as { data: { id: string; username: string }[] | null };
 
         pendingProfiles = (incoming ?? []).map((f) => {
-          const profile = (profiles ?? []).find((p) => p.id === f.user_id);
+          const profile = (profiles ?? []).find((p) => p.id === f.requester_id);
+          return {
+            ...f,
+            username: profile?.username ?? "Unknown",
+            best_wpm: null,
+          };
+        });
+      }
+
+      // Fetch profiles for sent requests
+      const sentUserIds = (outgoing ?? []).map((f) => f.addressee_id);
+      let sentProfiles: FriendRow[] = [];
+      if (sentUserIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, username")
+          .in("id", sentUserIds) as { data: { id: string; username: string }[] | null };
+
+        sentProfiles = (outgoing ?? []).map((f) => {
+          const profile = (profiles ?? []).find((p) => p.id === f.addressee_id);
           return {
             ...f,
             username: profile?.username ?? "Unknown",
@@ -149,6 +180,7 @@ export default function FriendsPage() {
 
       setFriends(friendProfiles);
       setPendingRequests(pendingProfiles);
+      setSentRequests(sentProfiles);
     } catch (err) {
       console.error("Error fetching friends:", err);
     } finally {
@@ -187,6 +219,20 @@ export default function FriendsPage() {
     }
   }, [searchQuery, user]);
 
+  // Auto-search as user types (debounced)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (!searchQuery.trim() || searchQuery.trim().length < 1) {
+      setSearchResults([]);
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => {
+      handleSearch();
+    }, 300);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchQuery, handleSearch]);
+
   // Send friend request
   const handleSendRequest = async (friendId: string) => {
     if (!user) return;
@@ -195,10 +241,10 @@ export default function FriendsPage() {
     try {
       // Check if request already exists
       const { data: existing } = await supabase
-        .from("friends")
+        .from("friendships" as any)
         .select("id")
         .or(
-          `and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`
+          `and(requester_id.eq.${user.id},addressee_id.eq.${friendId}),and(requester_id.eq.${friendId},addressee_id.eq.${user.id})`
         )
         .limit(1);
 
@@ -208,10 +254,9 @@ export default function FriendsPage() {
         return;
       }
 
-      const { error } = await supabase.from("friends").insert({
-        user_id: user.id,
-        friend_id: friendId,
-        status: "pending",
+      const { error } = await (supabase.from("friendships" as any) as any).insert({
+        requester_id: user.id,
+        addressee_id: friendId,
       });
 
       if (error) throw error;
@@ -228,8 +273,8 @@ export default function FriendsPage() {
   const handleAccept = async (requestId: string) => {
     setProcessingId(requestId);
     try {
-      const { error } = await supabase
-        .from("friends")
+      const { error } = await (supabase
+        .from("friendships" as any) as any)
         .update({ status: "accepted" })
         .eq("id", requestId);
 
@@ -247,8 +292,8 @@ export default function FriendsPage() {
   const handleDecline = async (requestId: string) => {
     setProcessingId(requestId);
     try {
-      const { error } = await supabase
-        .from("friends")
+      const { error } = await (supabase
+        .from("friendships" as any) as any)
         .delete()
         .eq("id", requestId);
 
@@ -262,13 +307,33 @@ export default function FriendsPage() {
     }
   };
 
+  // Cancel sent request
+  const handleCancel = async (requestId: string) => {
+    setProcessingId(requestId);
+    try {
+      const { error } = await (supabase
+        .from("friendships" as any) as any)
+        .delete()
+        .eq("id", requestId);
+
+      if (error) throw error;
+      toast.info("Friend request cancelled.");
+      fetchFriends();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to cancel request");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   // Challenge a friend
-  const handleChallenge = (friendUsername: string) => {
+  const handleChallenge = (friendUserId: string, friendUsername: string) => {
     const code = generateRoomCode();
+    sendChallengeNotification(friendUserId, playerName, code);
+    toast.success(`Room ${code} created! ${friendUsername} has been notified.`);
     router.push(
       `/race/${code}?name=${encodeURIComponent(playerName)}&host=1`
     );
-    toast.success(`Room ${code} created! Share the code with ${friendUsername}.`);
   };
 
   // Redirect if not authed
@@ -316,7 +381,7 @@ export default function FriendsPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                placeholder="Search by username..."
+                placeholder="Search by username or email..."
                 className="flex-1"
               />
               <Button
@@ -340,7 +405,13 @@ export default function FriendsPage() {
                   const initials = result.username.slice(0, 2).toUpperCase();
                   const isSending = sendingRequest === result.id;
                   const isAlreadyFriend = friends.some(
-                    (f) => f.friend_id === result.id || f.user_id === result.id
+                    (f) => f.addressee_id === result.id || f.requester_id === result.id
+                  );
+                  const isPendingSent = sentRequests.some(
+                    (f) => f.addressee_id === result.id
+                  );
+                  const isPendingReceived = pendingRequests.some(
+                    (f) => f.requester_id === result.id
                   );
 
                   return (
@@ -359,6 +430,14 @@ export default function FriendsPage() {
                       {isAlreadyFriend ? (
                         <Badge variant="secondary" className="text-[10px]">
                           Already friends
+                        </Badge>
+                      ) : isPendingSent ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          Request sent
+                        </Badge>
+                      ) : isPendingReceived ? (
+                        <Badge variant="outline" className="text-[10px]" style={{ borderColor: ACCENT, color: ACCENT }}>
+                          Wants to be friends
                         </Badge>
                       ) : (
                         <Button
@@ -408,12 +487,12 @@ export default function FriendsPage() {
             <TabsTrigger value="pending" className="gap-1.5">
               <Clock className="h-3.5 w-3.5" />
               Pending
-              {pendingRequests.length > 0 && (
+              {(pendingRequests.length + sentRequests.length) > 0 && (
                 <Badge
                   className="ml-1 h-5 min-w-[20px] px-1 text-[10px] text-white"
                   style={{ backgroundColor: ACCENT }}
                 >
-                  {pendingRequests.length}
+                  {pendingRequests.length + sentRequests.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -450,9 +529,9 @@ export default function FriendsPage() {
                   <div className="divide-y">
                     {friends.map((friend) => {
                       const friendId =
-                        friend.user_id === user.id
-                          ? friend.friend_id
-                          : friend.user_id;
+                        friend.requester_id === user.id
+                          ? friend.addressee_id
+                          : friend.requester_id;
                       const initials = friend.username
                         .slice(0, 2)
                         .toUpperCase();
@@ -484,7 +563,7 @@ export default function FriendsPage() {
                             size="sm"
                             variant="outline"
                             className="h-7 gap-1.5 text-xs"
-                            onClick={() => handleChallenge(friend.username)}
+                            onClick={() => handleChallenge(friendId, friend.username)}
                           >
                             <Swords className="h-3 w-3" />
                             Challenge
@@ -499,54 +578,51 @@ export default function FriendsPage() {
           </TabsContent>
 
           {/* Pending requests */}
-          <TabsContent value="pending">
+          <TabsContent value="pending" className="space-y-4">
+            {/* Incoming requests */}
             <Card>
               <CardContent className="p-0">
+                <div className="flex items-center gap-2 px-6 py-3 border-b">
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Incoming</span>
+                  {pendingRequests.length > 0 && (
+                    <Badge variant="secondary" className="ml-auto h-5 min-w-[20px] px-1 text-[10px]">
+                      {pendingRequests.length}
+                    </Badge>
+                  )}
+                </div>
                 {loadingFriends ? (
                   <div className="space-y-0 divide-y">
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-3 px-6 py-4 animate-pulse"
-                      >
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 px-6 py-4 animate-pulse">
                         <div className="h-9 w-9 rounded-full bg-muted" />
                         <div className="flex-1 space-y-1.5">
                           <div className="h-3.5 w-24 rounded bg-muted" />
                         </div>
                         <div className="h-7 w-16 rounded bg-muted" />
-                        <div className="h-7 w-16 rounded bg-muted" />
                       </div>
                     ))}
                   </div>
                 ) : pendingRequests.length === 0 ? (
-                  <div className="flex h-48 flex-col items-center justify-center gap-2">
-                    <Clock className="h-8 w-8 text-muted-foreground/40" />
-                    <p className="text-sm text-muted-foreground">
-                      No pending requests.
-                    </p>
+                  <div className="flex h-24 items-center justify-center">
+                    <p className="text-sm text-muted-foreground">No incoming requests.</p>
                   </div>
                 ) : (
                   <div className="divide-y">
                     {pendingRequests.map((req) => {
                       const initials = req.username.slice(0, 2).toUpperCase();
                       const isProcessing = processingId === req.id;
-
                       return (
-                        <div
-                          key={req.id}
-                          className="flex items-center gap-3 px-6 py-3.5"
-                        >
+                        <div key={req.id} className="flex items-center gap-3 px-6 py-3.5">
                           <Avatar className="h-9 w-9">
                             <AvatarFallback className="text-[11px] font-bold bg-muted text-muted-foreground">
                               {initials}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {req.username}
-                            </p>
+                            <p className="text-sm font-medium truncate">{req.username}</p>
                             <p className="text-xs text-muted-foreground">
-                              Sent {new Date(req.created_at).toLocaleDateString()}
+                              Received {new Date(req.created_at).toLocaleDateString()}
                             </p>
                           </div>
                           <div className="flex items-center gap-1.5">
@@ -557,11 +633,7 @@ export default function FriendsPage() {
                               disabled={isProcessing}
                               onClick={() => handleAccept(req.id)}
                             >
-                              {isProcessing ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Check className="h-3 w-3" />
-                              )}
+                              {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                               Accept
                             </Button>
                             <Button
@@ -575,6 +647,70 @@ export default function FriendsPage() {
                               Decline
                             </Button>
                           </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Sent requests */}
+            <Card>
+              <CardContent className="p-0">
+                <div className="flex items-center gap-2 px-6 py-3 border-b">
+                  <Send className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sent</span>
+                  {sentRequests.length > 0 && (
+                    <Badge variant="secondary" className="ml-auto h-5 min-w-[20px] px-1 text-[10px]">
+                      {sentRequests.length}
+                    </Badge>
+                  )}
+                </div>
+                {loadingFriends ? (
+                  <div className="space-y-0 divide-y">
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 px-6 py-4 animate-pulse">
+                        <div className="h-9 w-9 rounded-full bg-muted" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="h-3.5 w-24 rounded bg-muted" />
+                        </div>
+                        <div className="h-7 w-16 rounded bg-muted" />
+                      </div>
+                    ))}
+                  </div>
+                ) : sentRequests.length === 0 ? (
+                  <div className="flex h-24 items-center justify-center">
+                    <p className="text-sm text-muted-foreground">No sent requests.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {sentRequests.map((req) => {
+                      const initials = req.username.slice(0, 2).toUpperCase();
+                      const isProcessing = processingId === req.id;
+                      return (
+                        <div key={req.id} className="flex items-center gap-3 px-6 py-3.5">
+                          <Avatar className="h-9 w-9">
+                            <AvatarFallback className="text-[11px] font-bold bg-muted text-muted-foreground">
+                              {initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{req.username}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Sent {new Date(req.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 gap-1 text-xs"
+                            disabled={isProcessing}
+                            onClick={() => handleCancel(req.id)}
+                          >
+                            {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                            Cancel
+                          </Button>
                         </div>
                       );
                     })}

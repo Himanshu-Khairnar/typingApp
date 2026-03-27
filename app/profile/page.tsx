@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Trophy, Zap, Target, Clock, ArrowLeft,
-  TrendingUp, BarChart2, KeyboardIcon, Timer,
+  TrendingUp, BarChart2, KeyboardIcon,
+  ChevronLeft, ChevronRight, Flame,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -38,31 +38,17 @@ function formatTotalTime(ms: number) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function StatCard({
-  icon: Icon, label, value, sub, accent,
+function StatItem({
+  label, value, sub, accent, color,
 }: {
-  icon: React.ElementType; label: string; value: string; sub?: string; accent?: boolean;
+  label: string; value: string; sub?: string; accent?: string; color?: string;
 }) {
-  const { theme } = useAppSettings();
-  const ACCENT = THEME_COLORS[theme].primary;
   return (
-    <Card style={accent ? { borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}08` } : undefined}>
-      <CardContent className="p-5">
-        <div className="flex items-start gap-3">
-          <div
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-            style={{ backgroundColor: accent ? `${ACCENT}20` : undefined }}
-          >
-            <Icon className="h-4 w-4" style={{ color: accent ? ACCENT : undefined }} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-            <p className="text-2xl font-bold tabular-nums leading-tight" style={{ color: accent ? ACCENT : undefined }}>{value}</p>
-            {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="text-center">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">{label}</p>
+      <p className="mt-1 text-3xl font-bold tabular-nums leading-none" style={{ color: color ?? accent }}>{value}</p>
+      {sub && <p className="mt-1.5 text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
   );
 }
 
@@ -73,6 +59,9 @@ export default function ProfilePage() {
   const router = useRouter();
   const [results, setResults]   = useState<Result[]>([]);
   const [fetching, setFetching] = useState(true);
+  const [resultsPage, setResultsPage] = useState(0);
+  const RESULTS_PER_PAGE = 10;
+  const [streak, setStreak] = useState({ current: 0, longest: 0 });
 
   useEffect(() => {
     if (!loading && !user) router.replace("/auth");
@@ -87,6 +76,13 @@ export default function ProfilePage() {
       .order("created_at", { ascending: false })
       .limit(200)
       .then(({ data }) => { setResults(data ?? []); setFetching(false); });
+    (supabase.from("streaks" as any) as any)
+      .select("current_streak, longest_streak")
+      .eq("user_id", user.id)
+      .single()
+      .then(({ data }: any) => {
+        if (data) setStreak({ current: data.current_streak, longest: data.longest_streak });
+      });
   }, [user]);
 
   // ── Derived stats ───────────────────────────────────────────────────────────
@@ -163,6 +159,11 @@ export default function ProfilePage() {
               <Badge variant="secondary">{results.length} tests</Badge>
               {stats?.pb && <Badge variant="outline" style={{ borderColor: `${ACCENT}50`, color: ACCENT }}>PB {Math.round(Number(stats.pb.net_wpm))} wpm</Badge>}
               {stats && <Badge variant="outline">{stats.avgAcc}% avg acc</Badge>}
+              {streak.current > 0 && (
+                <Badge variant="outline" className="gap-1" style={{ borderColor: "#f59e0b50", color: "#f59e0b" }}>
+                  <Flame className="h-3 w-3" />{streak.current} day streak
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -182,11 +183,24 @@ export default function ProfilePage() {
         ) : (
           <>
             {/* ── Key stats ── */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard accent icon={Trophy}     label="Best WPM"    value={String(Math.round(Number(stats.pb.net_wpm)))} sub={`${stats.pb.accuracy}% accuracy`} />
-              <StatCard        icon={Zap}        label="Avg WPM"     value={String(stats.avgWpm)}   sub={`last 10: ${stats.recentAvg}`} />
-              <StatCard        icon={Target}     label="Avg Accuracy" value={`${stats.avgAcc}%`} />
-              <StatCard        icon={Timer}      label="Time Typed"  value={formatTotalTime(stats.totalMs)} sub={`${results.length} tests`} />
+            <div className="rounded-xl border border-border/50 bg-card">
+              <div className="grid grid-cols-2 sm:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-border/40">
+                <div className="p-5 sm:p-6">
+                  <StatItem label="Best" value={String(Math.round(Number(stats.pb.net_wpm)))} sub={`${stats.pb.accuracy}% acc`} accent={ACCENT} />
+                </div>
+                <div className="p-5 sm:p-6">
+                  <StatItem label="Average" value={String(stats.avgWpm)} sub={`last 10: ${stats.recentAvg}`} />
+                </div>
+                <div className="p-5 sm:p-6">
+                  <StatItem label="Accuracy" value={`${stats.avgAcc}%`} />
+                </div>
+                <div className="p-5 sm:p-6">
+                  <StatItem label="Streak" value={`${streak.current}`} sub={`best: ${streak.longest}d`} color="#f59e0b" />
+                </div>
+                <div className="p-5 sm:p-6 col-span-2 sm:col-span-1">
+                  <StatItem label="Time" value={formatTotalTime(stats.totalMs)} sub={`${results.length} tests`} />
+                </div>
+              </div>
             </div>
 
             {/* ── Charts + breakdown tabs ── */}
@@ -223,7 +237,7 @@ export default function ProfilePage() {
                         <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, opacity: 0.4 }} width={32} domain={["auto", "auto"]} />
                         <Tooltip
                           contentStyle={{ background: "hsl(var(--background))", border: `1px solid ${ACCENT}40`, borderRadius: 8, fontSize: 12 }}
-                          formatter={(v: number) => [`${v} wpm`, "WPM"]}
+                          formatter={(v: any) => [`${v} wpm`, "WPM"]}
                           labelFormatter={(l) => `Test #${l}`}
                           cursor={{ stroke: ACCENT, strokeOpacity: 0.15, strokeWidth: 1 }}
                         />
@@ -289,39 +303,73 @@ export default function ProfilePage() {
             </Tabs>
 
             {/* ── Recent results ── */}
-            <Card>
-              <CardHeader className="pb-3 flex-row items-center justify-between">
-                <CardTitle className="text-base">Recent results</CardTitle>
-                <span className="text-xs text-muted-foreground">{results.length} total</span>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="divide-y">
-                  {results.slice(0, 20).map((r, i) => (
-                    <div key={r.id} className={cn("flex items-center gap-3 px-6 py-3 text-sm", i === 0 && "bg-muted/20")}>
-                      {/* WPM */}
-                      <span className="w-16 font-bold tabular-nums text-foreground">
-                        {Math.round(Number(r.net_wpm))}
-                        <span className="ml-1 text-[10px] font-normal text-muted-foreground">wpm</span>
-                      </span>
-                      {/* Acc */}
-                      <span className="w-12 tabular-nums text-muted-foreground text-xs">{r.accuracy}%</span>
-                      {/* Mode badge */}
-                      <Badge variant="secondary" className="text-[10px] capitalize shrink-0">
-                        {r.mode}{r.time_limit ? ` ${r.time_limit}s` : r.word_count ? ` ${r.word_count}w` : ""}
-                      </Badge>
-                      {/* Raw WPM */}
-                      <span className="hidden sm:block text-xs text-muted-foreground">raw {Math.round(Number(r.gross_wpm))}</span>
-                      {/* Time */}
-                      <span className="ml-auto text-xs text-muted-foreground tabular-nums">{formatTime(r.elapsed_ms)}</span>
-                      {/* Date */}
-                      <span className="hidden sm:block w-20 text-right text-xs text-muted-foreground">
-                        {new Date(r.created_at).toLocaleDateString()}
-                      </span>
+            {(() => {
+              const totalPages = Math.ceil(results.length / RESULTS_PER_PAGE);
+              const pageResults = results.slice(resultsPage * RESULTS_PER_PAGE, (resultsPage + 1) * RESULTS_PER_PAGE);
+              return (
+                <Card>
+                  <CardHeader className="pb-3 flex-row items-center justify-between">
+                    <CardTitle className="text-base">Recent results</CardTitle>
+                    <span className="text-xs text-muted-foreground">{results.length} total</span>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="divide-y">
+                      {pageResults.map((r, i) => (
+                        <div key={r.id} className={cn("flex items-center gap-3 px-6 py-3 text-sm", resultsPage === 0 && i === 0 && "bg-muted/20")}>
+                          {/* WPM */}
+                          <span className="w-16 font-bold tabular-nums text-foreground">
+                            {Math.round(Number(r.net_wpm))}
+                            <span className="ml-1 text-[10px] font-normal text-muted-foreground">wpm</span>
+                          </span>
+                          {/* Acc */}
+                          <span className="w-12 tabular-nums text-muted-foreground text-xs">{r.accuracy}%</span>
+                          {/* Mode badge */}
+                          <Badge variant="secondary" className="text-[10px] capitalize shrink-0">
+                            {r.mode}{r.time_limit ? ` ${r.time_limit}s` : r.word_count ? ` ${r.word_count}w` : ""}
+                          </Badge>
+                          {/* Raw WPM */}
+                          <span className="hidden sm:block text-xs text-muted-foreground">raw {Math.round(Number(r.gross_wpm))}</span>
+                          {/* Time */}
+                          <span className="ml-auto text-xs text-muted-foreground tabular-nums">{formatTime(r.elapsed_ms)}</span>
+                          {/* Date */}
+                          <span className="hidden sm:block w-20 text-right text-xs text-muted-foreground">
+                            {new Date(r.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between border-t px-6 py-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1 text-xs"
+                          disabled={resultsPage === 0}
+                          onClick={() => setResultsPage((p) => p - 1)}
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                          Prev
+                        </Button>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {resultsPage + 1} / {totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1 text-xs"
+                          disabled={resultsPage >= totalPages - 1}
+                          onClick={() => setResultsPage((p) => p + 1)}
+                        >
+                          Next
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </>
         )}
 
