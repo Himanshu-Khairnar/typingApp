@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Trophy, Medal, Crown } from "lucide-react";
 import { SiteNavbar } from "@/components/site-navbar";
@@ -67,7 +67,13 @@ export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Each request gets an id; responses from superseded requests are ignored so
+  // switching filters quickly can't leave the table showing the old filter.
+  const requestIdRef = useRef(0);
+
   const fetchLeaderboard = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+    const isStale = () => requestId !== requestIdRef.current;
     setLoading(true);
     try {
       const periodMap: Record<Period, string> = { today: "daily", week: "weekly", all: "all" };
@@ -77,6 +83,7 @@ export default function LeaderboardPage() {
         p_period: periodMap[period],
       });
 
+      if (isStale()) return;
       if (error) {
         console.error("Leaderboard RPC error:", error);
         setEntries([]);
@@ -96,9 +103,9 @@ export default function LeaderboardPage() {
         );
       }
     } catch {
-      setEntries([]);
+      if (!isStale()) setEntries([]);
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, [period, modeFilter, duration]);
 

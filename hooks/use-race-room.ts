@@ -47,6 +47,8 @@ interface UseRaceRoomOptions {
   playerId: string;
   playerName: string;
   isHost: boolean;
+  /** Don't connect/join until true (e.g. until auth has resolved). */
+  enabled?: boolean;
 }
 
 export function useRaceRoom({
@@ -54,14 +56,23 @@ export function useRaceRoom({
   playerId,
   playerName,
   isHost,
+  enabled = true,
 }: UseRaceRoomOptions) {
   const socketRef = useRef<Socket | null>(null);
   const mountedRef = useRef(true);
+  const countdownTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const playerNameRef = useRef(playerName);
-  playerNameRef.current = playerName;
   const isHostRef = useRef(isHost);
-  isHostRef.current = isHost;
+  useEffect(() => {
+    playerNameRef.current = playerName;
+    isHostRef.current = isHost;
+  }, [playerName, isHost]);
+
+  const clearCountdown = useCallback(() => {
+    countdownTimers.current.forEach(clearTimeout);
+    countdownTimers.current = [];
+  }, []);
 
   const myColor = getPlayerColor(playerId);
 
@@ -112,7 +123,8 @@ export function useRaceRoom({
     });
   }, []);
 
-  const triggerCountdown = useCallback((seed: string, startsAt: number, config?: RaceConfig) => {
+  const triggerCountdown = useCallback((seed: string, startsIn: number, config?: RaceConfig) => {
+    clearCountdown();
     setRaceSeed(seed);
     if (config) setRaceConfig(config);
     setPlayers((prev) =>
@@ -126,15 +138,18 @@ export function useRaceRoom({
         rank: null,
       })),
     );
-    const msUntilStart = Math.max(100, startsAt - Date.now());
+    const msUntilStart = Math.max(100, startsIn);
     setPhase("countdown");
     setCountdown(3);
-    setTimeout(() => { if (mountedRef.current) setCountdown(2); }, msUntilStart - 2000);
-    setTimeout(() => { if (mountedRef.current) setCountdown(1); }, msUntilStart - 1000);
-    setTimeout(() => {
-      if (mountedRef.current) { setCountdown(0); setPhase("racing"); }
-    }, msUntilStart);
-  }, []);
+    // Timers are tracked so a reset/end during the countdown can cancel them
+    countdownTimers.current = [
+      setTimeout(() => { if (mountedRef.current) setCountdown(2); }, msUntilStart - 2000),
+      setTimeout(() => { if (mountedRef.current) setCountdown(1); }, msUntilStart - 1000),
+      setTimeout(() => {
+        if (mountedRef.current) { setCountdown(0); setPhase("racing"); }
+      }, msUntilStart),
+    ];
+  }, [clearCountdown]);
 
   const broadcastProgress = useCallback(
     (data: {
@@ -158,12 +173,10 @@ export function useRaceRoom({
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let seed = "";
     for (let i = 0; i < 5; i++) seed += chars[Math.floor(Math.random() * chars.length)];
-    const startsAt = Date.now() + 3500;
-
     if (socketRef.current?.connected) {
-      socketRef.current.emit("start", { roomCode, seed, startsAt, config });
+      socketRef.current.emit("start", { roomCode, seed, config });
     } else {
-      triggerCountdown(seed, startsAt, config);
+      triggerCountdown(seed, 3500, config);
     }
   }, [roomCode, triggerCountdown]);
 
@@ -171,6 +184,7 @@ export function useRaceRoom({
     if (socketRef.current?.connected) {
       socketRef.current.emit("reset", { roomCode });
     } else {
+      clearCountdown();
       setPhase("lobby");
       setRaceSeed(null);
       setRaceConfig(null);
@@ -187,7 +201,7 @@ export function useRaceRoom({
         })),
       );
     }
-  }, [roomCode]);
+  }, [roomCode, clearCountdown]);
 
   const endRace = useCallback(() => {
     if (socketRef.current?.connected) {
@@ -198,6 +212,7 @@ export function useRaceRoom({
   }, [roomCode]);
 
   useEffect(() => {
+    if (!enabled) return;
     mountedRef.current = true;
 
     const socket = io({ transports: ["websocket", "polling"] });
@@ -247,18 +262,29 @@ export function useRaceRoom({
       setPlayers((prev) => prev.filter((p) => p.id !== leftId));
     });
 
-    socket.on("start", ({ seed, startsAt, config }: { seed: string; startsAt: number; config: RaceConfig }) => {
+    socket.on("start", ({ seed, startsIn, config }: { seed: string; startsIn: number; config: RaceConfig }) => {
       if (!mountedRef.current) return;
-      triggerCountdown(seed, startsAt, config);
+      triggerCountdown(seed, startsIn, config);
     });
 
     socket.on("progress", ({ playerId: pid, ...data }: { playerId: string } & Partial<RacePlayer>) => {
-      if (!mountedRef.current || pid === playerId) return;
+      if (!mountedRef.current) return;
+      // Our own echo only carries the server-stamped finish time (used for ranking)
+      if (pid === playerId) {
+        if (data.finishedAt) upsertPlayer({ id: pid, finishedAt: data.finishedAt });
+        return;
+      }
       upsertPlayer({ id: pid, ...data });
+    });
+
+    socket.on("host_changed", ({ playerId: hostId }: { playerId: string }) => {
+      if (!mountedRef.current) return;
+      setPlayers((prev) => prev.map((p) => ({ ...p, isHost: p.id === hostId })));
     });
 
     socket.on("reset", () => {
       if (!mountedRef.current) return;
+      clearCountdown();
       setPhase("lobby");
       setRaceSeed(null);
       setRaceConfig(null);
@@ -278,6 +304,7 @@ export function useRaceRoom({
 
     socket.on("end", () => {
       if (!mountedRef.current) return;
+      clearCountdown();
       setPhase("finished");
     });
 
@@ -293,14 +320,19 @@ export function useRaceRoom({
 
     return () => {
       mountedRef.current = false;
+      clearCountdown();
       socket.disconnect();
       socketRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode, playerId]);
+  }, [roomCode, playerId, enabled]);
+
+  // Host is decided by the server (and migrates if the host leaves)
+  const amHost = players.find((p) => p.id === playerId)?.isHost ?? false;
 
   return {
     players,
+    isHost: amHost,
     phase,
     setPhase,
     countdown,

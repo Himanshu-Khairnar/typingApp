@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useMotionValue, useTransform, animate, motion } from "framer-motion";
 
 interface AnimatedCounterProps {
@@ -21,12 +21,7 @@ export function AnimatedCounter({
   const rounded = useTransform(motionVal, (latest) =>
     latest.toFixed(decimals)
   );
-  const prevValue = useRef(0);
-
   useEffect(() => {
-    const from = prevValue.current;
-    prevValue.current = value;
-
     const controls = animate(motionVal, value, {
       duration,
       ease: "easeOut",

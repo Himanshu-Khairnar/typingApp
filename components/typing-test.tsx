@@ -1,7 +1,17 @@
 "use client";
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { AnimatePresence, motion, type Variants } from "framer-motion";
 import { useTypingEngine, useTypingTimer } from "@/hooks/use-typing-engine";
+import { AnimatedCounter } from "@/components/ui/animated-counter";
+import { RotateCCWIcon } from "@/components/animated-icons/rotate-ccw";
+import { RefreshCWIcon } from "@/components/animated-icons/refresh-cw";
+import { HomeIcon } from "@/components/animated-icons/home";
+import { LogoutIcon } from "@/components/animated-icons/logout";
+import { ArrowLeftIcon } from "@/components/animated-icons/arrow-left";
+import { SparklesIcon } from "@/components/animated-icons/sparkles";
+import { useAnimatedIcon } from "@/components/animated-icons/use-animated-icon";
 import { useTypingStore } from "@/lib/typing-store";
 import { cn } from "@/lib/utils";
 import {
@@ -12,15 +22,11 @@ import {
 } from "@/lib/words";
 import { useRaceBroadcast } from "@/hooks/use-race-broadcast";
 import { SiteNavbar } from "@/components/site-navbar";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import type { KeyboardThemeName } from "@/components/ui/keyboard";
 import type { CodeLanguage } from "@/lib/words";
-import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
+import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import {
   Area,
   AreaChart,
-  CartesianGrid,
   Line,
   LineChart,
   ReferenceLine,
@@ -37,7 +43,6 @@ import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
 
 
 type CaretStyle = "beam" | "block" | "underline";
-type PerformancePoint = { netWpm: number; accuracy: number; elapsedMs: number };
 type TimePoint = { second: number; wpm: number; accuracy: number };
 
 const QWERTY_ROWS = [
@@ -158,6 +163,109 @@ function TimeGuard({ timeLimit, zenMode, testMode, onTimeUp }: {
 }
 
 // ---------------------------------------------------------------------------
+// Micro-interaction building blocks
+// ---------------------------------------------------------------------------
+
+const PILL_SPRING = { type: "spring", stiffness: 500, damping: 38 } as const;
+
+/** Toolbar option with a shared-layout pill that slides between siblings. */
+function ToolbarOption({
+  active, onClick, group, color, title, className, children,
+}: {
+  active: boolean; onClick: () => void; group: string; color: string;
+  title?: string; className?: string; children: React.ReactNode;
+}) {
+  return (
+    <motion.button
+      type="button"
+      title={title}
+      onClick={onClick}
+      whileTap={{ scale: 0.9 }}
+      aria-pressed={active}
+      className={cn(
+        "relative rounded-full px-3 py-1 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+        className,
+      )}
+      style={active ? { color } : undefined}
+    >
+      {active && (
+        <motion.span
+          layoutId={`toolbar-pill-${group}`}
+          className="absolute inset-0 rounded-full bg-background shadow-sm ring-1 ring-border/60"
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={PILL_SPRING}
+        />
+      )}
+      <span className="relative z-10">{children}</span>
+    </motion.button>
+  );
+}
+
+type IconComponent = React.ForwardRefExoticComponent<
+  { size?: number; className?: string } & React.RefAttributes<{ startAnimation: () => void; stopAnimation: () => void }>
+>;
+
+/** Round icon button whose lucide-animated icon plays on hover/focus/press. */
+function AnimatedIconButton({
+  Icon, title, onClick, primary, color, fg,
+}: {
+  Icon: IconComponent; title: string; onClick: () => void;
+  primary?: boolean; color: string; fg: string;
+}) {
+  const { iconRef, triggerProps, start } = useAnimatedIcon();
+  return (
+    <motion.button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={() => { start(); onClick(); }}
+      {...triggerProps}
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.88 }}
+      transition={{ type: "spring", stiffness: 500, damping: 25 }}
+      className={cn(
+        "flex h-10 w-10 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        primary ? "shadow-md hover:shadow-lg" : "border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted",
+      )}
+      style={primary ? { backgroundColor: color, color: fg, boxShadow: `0 6px 18px -6px ${color}` } : undefined}
+    >
+      <Icon ref={iconRef} size={16} className="pointer-events-none flex" />
+    </motion.button>
+  );
+}
+
+/** Floating zen-mode pill (link or button) with an animated icon. */
+function ZenPill({
+  Icon, label, title, href, onClick,
+}: {
+  Icon: IconComponent; label: string; title: string; href?: string; onClick?: () => void;
+}) {
+  const { iconRef, triggerProps } = useAnimatedIcon();
+  const cls = "flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur-md transition-colors hover:text-foreground hover:bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+  const content = (<><Icon ref={iconRef} size={15} className="pointer-events-none flex" />{label}</>);
+  return (
+    <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.95 }}>
+      {href ? (
+        <Link href={href} title={title} className={cls} {...triggerProps}>{content}</Link>
+      ) : (
+        <button type="button" title={title} onClick={onClick} className={cls} {...triggerProps}>{content}</button>
+      )}
+    </motion.div>
+  );
+}
+
+const resultContainer: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
+};
+const resultItem: Variants = {
+  hidden: { opacity: 0, y: 12, filter: "blur(4px)" },
+  show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { type: "spring", stiffness: 260, damping: 26 } },
+};
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -167,19 +275,27 @@ interface TypingTestProps {
 }
 
 export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTestProps) {
-  const { theme, isMuted } = useAppSettings();
-  const [seed, setSeed] = useState(() => generateSeed());
-  const [roomCode, setRoomCode] = useState("");
+  const { theme } = useAppSettings();
+  // Fixed seed for the server render + hydration, randomised right after mount.
+  // Generating it during render gave server and client different words, which
+  // caused a hydration error and a full client re-render of the page.
+  const [seed, setSeed] = useState("TYPEA");
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client-only randomisation
+    setSeed(generateSeed());
+  }, []);
+  const [roomCode] = useState("");
   const [playerId] = useState(() => generatePlayerId());
 
   const [testMode, setTestMode] = useState<TestMode>("time");
   const [timeLimit, setTimeLimit] = useState(30);
-  const [wordCount, setWordCount] = useState(40);
-  const [language, setLanguage] = useState<Language>("english");
+  // 40 isn't one of the selectable options (10/25/50/100), so nothing was highlighted
+  const [wordCount, setWordCount] = useState(25);
+  const [language] = useState<Language>("english");
   const [includePunctuation, setIncludePunctuation] = useState(false);
   const [includeNumbers, setIncludeNumbers] = useState(false);
   const [codeLanguage, setCodeLanguage] = useState<CodeLanguage>("javascript");
-  const [customTextInput, setCustomTextInput] = useState("");
+  const [customTextInput] = useState("");
 
   // UI state
   const [caretStyle, setCaretStyle] = useState<CaretStyle>("beam");
@@ -190,13 +306,16 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   const [isNewPB, setIsNewPB] = useState(false);
 
   // Charts
-  const [performanceHistory, setPerformanceHistory] = useState<PerformancePoint[]>([]);
   const lastRecordedResultRef = useRef<string | null>(null);
   const [wpmOverTime, setWpmOverTime] = useState<TimePoint[]>([]);
 
   // Hooks
-  const { history, addEntry, clearHistory, personalBest } = useLocalHistory();
-  const { recordKeystroke, getErrorRate, resetHeatmap } = useKeyHeatmap();
+  const { history, addEntry } = useLocalHistory();
+  const { heatmap, recordKeystroke, getErrorRate, resetHeatmap } = useKeyHeatmap();
+  const getKeyTotal = (key: string) => {
+    const e = heatmap[key.toLowerCase()];
+    return e ? e.correct + e.incorrect : 0;
+  };
 
   const handleKeystroke = useCallback(
     (key: string, isCorrect: boolean) => {
@@ -243,15 +362,29 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     grossWpm,
     netWpm,
     accuracy,
-    progress,
     correctChars,
     incorrectChars,
     elapsedMs,
+    isRunning,
+    startedAt,
     racePayload,
   } = useTypingEngine(words, { onKeystroke: handleKeystroke });
 
-  const liveStatsRef = useRef({ netWpm, accuracy });
-  liveStatsRef.current = { netWpm, accuracy };
+  // Personal best for the *same* test config — comparing a 15s test against
+  // a 100-word test made the PB badge meaningless.
+  const personalBest = useMemo(() => {
+    let best: number | null = null;
+    for (const e of history) {
+      if (e.mode !== testMode) continue;
+      if (testMode === "time" && e.timeLimit !== timeLimit) continue;
+      if (testMode === "words" && e.wordCount !== wordCount) continue;
+      if (best === null || e.netWpm > best) best = e.netWpm;
+    }
+    return best;
+  }, [history, testMode, timeLimit, wordCount]);
+
+  const liveStatsRef = useRef({ correctChars, accuracy });
+  useEffect(() => { liveStatsRef.current = { correctChars, accuracy }; }, [correctChars, accuracy]);
 
   const hasStarted = typed.length > 0;
 
@@ -286,6 +419,12 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     const id = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(id);
   }, []);
+
+  // Clicking a toolbar option moved focus to that button, so the "click to
+  // focus" overlay appeared right after every config change. Hand focus back.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [testConfig, caretStyle, zenMode]);
 
   // Caps lock detection
   useEffect(() => {
@@ -441,7 +580,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     if (textRef.current) {
       textRef.current.style.transition = "none";
       textRef.current.style.transform = "";
-      textRef.current.offsetHeight; // force reflow
+      void textRef.current.offsetHeight; // force reflow
       textRef.current.style.transition = "";
     }
     prevTypedLenRef.current = 0;
@@ -469,7 +608,8 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   const lastKeyRef = useRef("");
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); window.location.href = "/"; return; }
+      // Escape = fresh test (was a full page reload to "/")
+      if (event.key === "Escape") { event.preventDefault(); newSeed(); return; }
       if (event.key === "Tab") { event.preventDefault(); lastKeyRef.current = "Tab"; return; }
       if (event.key === "Enter" && lastKeyRef.current === "Tab") { event.preventDefault(); lastKeyRef.current = ""; restartSame(); return; }
       lastKeyRef.current = event.key;
@@ -479,7 +619,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [restartSame]);
+  }, [restartSame, newSeed]);
 
   const [timeIsUp, setTimeIsUp] = useState(false);
   const handleTimeUp = useCallback(() => { setTimeIsUp(true); stop(); }, [stop]);
@@ -493,31 +633,40 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     if (!hasStarted || isComplete || timeIsUp) return;
     const id = setInterval(() => {
       const ms = useTypingStore.getState().elapsedMs;
-      const { netWpm: wpm, accuracy: acc } = liveStatsRef.current;
       const second = Math.round(ms / 1000);
       if (second < 1) return;
+      // Compute WPM against the *current* time — the render-time netWpm is
+      // frozen at the last keystroke, so pauses never showed up in the chart.
+      const { correctChars: cc, accuracy: acc } = liveStatsRef.current;
+      const wpm = cc / 5 / (ms / 60000);
       setWpmOverTime((prev) =>
         [...prev.filter((p) => p.second !== second), { second, wpm: Math.max(0, Math.round(wpm)), accuracy: Math.round(acc * 10) / 10 }]
           .sort((a, b) => a.second - b.second),
       );
     }, 1000);
     return () => clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasStarted, isComplete, timeIsUp]);
 
-  // Final data point
+  // Final data point — wait until the store has stopped so elapsedMs is final
   useEffect(() => {
-    if (!isComplete && !timeIsUp) return;
+    if ((!isComplete && !timeIsUp) || isRunning) return;
     const second = Math.max(1, Math.round(elapsedMs / 1000));
     setWpmOverTime((prev) =>
       [...prev.filter((p) => p.second !== second), { second, wpm: Math.max(0, Math.round(netWpm)), accuracy: Math.round(accuracy * 10) / 10 }]
         .sort((a, b) => a.second - b.second),
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isComplete, timeIsUp]);
+  }, [isComplete, timeIsUp, isRunning]);
 
   // Reset chart on new test
   useEffect(() => { if (!hasStarted) setWpmOverTime([]); }, [hasStarted]);
+
+  // New text → imperative DOM state from the previous text is gone (the text
+  // node is keyed by `text`), so the incremental colouring must start fresh.
+  useLayoutEffect(() => {
+    prevTypedLenRef.current = 0;
+    viewportOffsetRef.current = 0;
+  }, [text]);
 
   // Zen mode — auto-continue when words run out (no results screen, no time limit)
   useEffect(() => {
@@ -526,23 +675,21 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
 
   useEffect(() => { onResultVisibleChange?.(isComplete || timeIsUp); }, [isComplete, timeIsUp, onResultVisibleChange]);
 
-  // Record result + PB check
+  // Record result + PB check. Runs once per finished test: we wait for the
+  // store to stop (final elapsedMs) and key on the test's start timestamp —
+  // the old signature included live numbers, so a late re-render with the
+  // final time saved the same result twice. Zen runs are not recorded.
   useEffect(() => {
-    if (!(isComplete || timeIsUp) || typed.length === 0) return;
-    const signature = `${seed}-${typed.length}-${Math.round(netWpm)}-${Math.round(accuracy * 10)}-${elapsedMs}`;
+    if (zenMode || !(isComplete || timeIsUp) || isRunning || typed.length === 0 || startedAt === null) return;
+    const signature = `${seed}-${startedAt}`;
     if (lastRecordedResultRef.current === signature) return;
     lastRecordedResultRef.current = signature;
 
     const roundedWpm = Math.max(0, Math.round(netWpm));
-    const newBest = personalBest === null || roundedWpm > personalBest.netWpm;
-    setIsNewPB(newBest);
+    setIsNewPB(personalBest !== null && roundedWpm > personalBest);
 
     addEntry({ mode: testMode, timeLimit: testMode === "time" ? timeLimit : undefined, wordCount: testMode === "words" ? wordCount : undefined, language, netWpm: roundedWpm, grossWpm: Math.max(0, Math.round(grossWpm)), accuracy: Number(accuracy.toFixed(1)), elapsedMs, consistency, correctChars, incorrectChars });
-
-    setPerformanceHistory((prev) =>
-      [...prev, { netWpm: roundedWpm, accuracy: Number(accuracy.toFixed(1)), elapsedMs }].slice(-12),
-    );
-  }, [isComplete, timeIsUp, typed.length, seed, netWpm, accuracy, elapsedMs, personalBest, addEntry, testMode, timeLimit, wordCount, language, grossWpm]);
+  }, [zenMode, isComplete, timeIsUp, isRunning, startedAt, typed.length, seed, netWpm, accuracy, elapsedMs, personalBest, addEntry, testMode, timeLimit, wordCount, language, grossWpm, consistency, correctChars, incorrectChars]);
 
   useRaceBroadcast({ roomCode, playerId, payload: racePayload, enabled: roomCode.length > 0 });
 
@@ -573,109 +720,113 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
       {/* ------------------------------------------------------------------ */}
       {/* Config toolbar                                                       */}
       {/* ------------------------------------------------------------------ */}
-      <div className={cn("mb-8 flex flex-col items-center gap-3 transition-opacity duration-200", hasStarted && "pointer-events-none opacity-0 select-none")}>
-        <div className="flex flex-wrap items-center justify-center gap-0.5 rounded-full bg-muted/60 px-3 py-1.5 text-sm">
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={hasStarted ? { opacity: 0, y: -6 } : { opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className={cn("mb-8 flex flex-col items-center gap-3", hasStarted && "pointer-events-none select-none")}
+      >
+        <motion.div layout className="flex flex-wrap items-center justify-center gap-0.5 rounded-full bg-muted/60 px-2 py-1.5 text-sm">
           {/* Modifiers — hidden in code/custom mode */}
           {testMode !== "code" && testMode !== "custom" && (
             <>
-              <button type="button" onClick={() => setIncludePunctuation((p) => !p)}
-                className={cn("rounded-full px-3 py-1 font-medium transition-colors", includePunctuation ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-                style={includePunctuation ? { color: themeColors.primary } : undefined}
-              >@ punctuation</button>
-              <button type="button" onClick={() => setIncludeNumbers((p) => !p)}
-                className={cn("rounded-full px-3 py-1 font-medium transition-colors", includeNumbers ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-                style={includeNumbers ? { color: themeColors.primary } : undefined}
-              ># numbers</button>
+              <ToolbarOption group="punct" active={includePunctuation} color={themeColors.primary} onClick={() => setIncludePunctuation((p) => !p)}>@ punctuation</ToolbarOption>
+              <ToolbarOption group="nums" active={includeNumbers} color={themeColors.primary} onClick={() => setIncludeNumbers((p) => !p)}># numbers</ToolbarOption>
               <span className="mx-1 h-4 w-px bg-border/70" aria-hidden />
             </>
           )}
 
           {/* Test mode */}
           {(["time", "words", "quote", "code"] as TestMode[]).map((mode) => (
-            <button key={mode} type="button" onClick={() => setTestMode(mode)}
-              className={cn("rounded-full px-3 py-1 font-medium capitalize transition-colors", testMode === mode ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              style={testMode === mode ? { color: themeColors.primary } : undefined}
-            >{mode}</button>
+            <ToolbarOption key={mode} group="mode" active={testMode === mode} color={themeColors.primary} onClick={() => setTestMode(mode)} className="capitalize">{mode}</ToolbarOption>
           ))}
 
           <span className="mx-1 h-4 w-px bg-border/70" aria-hidden />
 
           {/* Time options — also shown in code mode */}
           {(testMode === "time" || testMode === "code") && [15, 30, 60, 90, 120].map((t) => (
-            <button key={t} type="button" onClick={() => setTimeLimit(t)}
-              className={cn("rounded-full px-3 py-1 font-medium transition-colors", timeLimit === t ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              style={timeLimit === t ? { color: themeColors.primary } : undefined}
-            >{t}</button>
+            <ToolbarOption key={t} group="time" active={timeLimit === t} color={themeColors.primary} onClick={() => setTimeLimit(t)} className="tabular-nums">{t}</ToolbarOption>
           ))}
 
           {/* Word count options */}
           {testMode === "words" && [10, 25, 50, 100].map((c) => (
-            <button key={c} type="button" onClick={() => setWordCount(c)}
-              className={cn("rounded-full px-3 py-1 font-medium transition-colors", wordCount === c ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              style={wordCount === c ? { color: themeColors.primary } : undefined}
-            >{c}</button>
+            <ToolbarOption key={c} group="words" active={wordCount === c} color={themeColors.primary} onClick={() => setWordCount(c)} className="tabular-nums">{c}</ToolbarOption>
           ))}
 
           {/* Code language options */}
           {testMode === "code" && (["javascript", "python", "cpp"] as CodeLanguage[]).map((lang) => (
-            <button key={lang} type="button" onClick={() => setCodeLanguage(lang)}
-              className={cn("rounded-full px-3 py-1 font-medium transition-colors", codeLanguage === lang ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              style={codeLanguage === lang ? { color: themeColors.primary } : undefined}
-            >{lang === "cpp" ? "c++" : lang}</button>
+            <ToolbarOption key={lang} group="lang" active={codeLanguage === lang} color={themeColors.primary} onClick={() => setCodeLanguage(lang)}>{lang === "cpp" ? "c++" : lang}</ToolbarOption>
           ))}
 
           {(testMode === "time" || testMode === "words" || testMode === "code") && <span className="mx-1 h-4 w-px bg-border/70" aria-hidden />}
 
           {/* Caret style */}
           {(["beam", "block", "underline"] as CaretStyle[]).map((s) => (
-            <button key={s} type="button" title={`${s} caret`} onClick={() => setCaretStyle(s)}
-              className={cn("rounded-full px-2.5 py-1 font-mono text-xs font-bold transition-colors", caretStyle === s ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              style={caretStyle === s ? { color: themeColors.primary } : undefined}
-            >{s === "beam" ? "|" : s === "block" ? "▌" : "_"}</button>
+            <ToolbarOption key={s} group="caret" title={`${s} caret`} active={caretStyle === s} color={themeColors.primary} onClick={() => setCaretStyle(s)} className="px-2.5 font-mono text-xs font-bold">
+              {s === "beam" ? "|" : s === "block" ? "▌" : "_"}
+            </ToolbarOption>
           ))}
 
           {/* Zen mode */}
-          <button type="button" title={zenMode ? "Exit zen mode" : "Zen mode"} onClick={toggleZen}
-            className={cn("rounded-full px-3 py-1 font-medium transition-colors", zenMode ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-            style={zenMode ? { color: themeColors.primary } : undefined}
-          >zen</button>
-        </div>
+          <ToolbarOption group="zen" title={zenMode ? "Exit zen mode" : "Zen mode"} active={zenMode} color={themeColors.primary} onClick={toggleZen}>zen</ToolbarOption>
+        </motion.div>
 
-      </div>
+        <p className="text-[11px] text-muted-foreground/60">
+          <kbd className="rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">tab</kbd>
+          {" + "}
+          <kbd className="rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">enter</kbd>
+          {" restart · "}
+          <kbd className="rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">esc</kbd>
+          {" new test"}
+        </p>
+      </motion.div>
 
       {/* ------------------------------------------------------------------ */}
       {/* Results                                                              */}
       {/* ------------------------------------------------------------------ */}
       {(isComplete || timeIsUp) && !zenMode ? (
-        <div className="w-full space-y-4">
+        <motion.div className="w-full space-y-4" variants={resultContainer} initial="hidden" animate="show">
 
           {/* ── Main result ── */}
           <div className="overflow-hidden">
 
             {/* Top: big stats left + chart right */}
-            <div className="flex items-stretch">
+            <div className="flex flex-col items-stretch sm:flex-row">
 
               {/* Left — WPM + ACC */}
-              <div className="flex flex-col justify-center gap-4 px-0 pr-8 py-4 shrink-0 w-[152px]">
+              <motion.div variants={resultItem} className="flex shrink-0 flex-row justify-start gap-8 py-4 pr-8 sm:w-[168px] sm:flex-col sm:justify-center sm:gap-4">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">wpm</p>
-                  <span className="text-6xl font-bold tabular-nums leading-none" style={{ color: themeColors.primary }}>
-                    {Math.round(netWpm)}
-                  </span>
-                  {isNewPB && (
-                    <Badge className="ml-2 align-middle bg-amber-400/20 text-amber-500 hover:bg-amber-400/20 border-amber-400/30">PB</Badge>
-                  )}
+                  <AnimatedCounter
+                    value={Math.round(netWpm)}
+                    duration={0.9}
+                    className="text-6xl font-bold tabular-nums leading-none"
+                    style={{ color: themeColors.primary }}
+                  />
+                  <AnimatePresence>
+                    {isNewPB && (
+                      <motion.span
+                        initial={{ opacity: 0, scale: 0.4, rotate: -12 }}
+                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                        transition={{ type: "spring", stiffness: 420, damping: 14, delay: 0.7 }}
+                        className="mt-2 flex w-fit items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/15 px-2 py-0.5 text-[11px] font-bold text-amber-600 dark:text-amber-400"
+                      >
+                        <SparklesIcon size={12} className="flex" />
+                        new PB
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">acc</p>
                   <span className="text-3xl font-bold tabular-nums leading-none text-foreground">
-                    {accuracy.toFixed(1)}%
+                    <AnimatedCounter value={accuracy} decimals={1} duration={0.9} />%
                   </span>
                 </div>
-              </div>
+              </motion.div>
 
               {/* Right — compact chart */}
-              <div className="flex-1 border-l border-border/20 px-3 pb-8 min-w-0">
+              <motion.div variants={resultItem} className="min-w-0 flex-1 px-3 pb-8 sm:border-l sm:border-border/20">
                 {/* Legend */}
                 <div className="mb-2 flex items-center gap-4 px-1">
                   <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -787,56 +938,48 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
                     not enough data
                   </div>
                 )}
-              </div>
+              </motion.div>
             </div>
 
             {/* Test type label */}
-            <div className="px-0 py-2 border-t border-border/10">
+            <motion.div variants={resultItem} className="px-0 py-2 border-t border-border/10">
               <span className="font-mono text-[11px] text-muted-foreground/60">
                 {testMode}
                 {testMode === "time" ? ` ${timeLimit}` : testMode === "words" ? ` ${wordCount}` : ""}
               </span>
-            </div>
+            </motion.div>
 
             {/* Bottom stats row + action buttons */}
-            <div className="border-t border-border/10 flex flex-wrap items-center gap-x-10 gap-y-3 px-0 py-5">
+            <motion.div variants={resultItem} className="border-t border-border/10 flex flex-wrap items-center gap-x-10 gap-y-3 px-0 py-5">
               {[
-                { label: "raw",         value: String(Math.round(grossWpm)) },
-                { label: "characters",  value: `${correctChars} / ${incorrectChars} / 0` },
-                { label: "consistency", value: `${consistency}%` },
-                { label: "time",        value: formatTime(elapsedMs) },
-              ].map(({ label, value }) => (
-                <div key={label}>
+                { label: "raw",         value: String(Math.round(grossWpm)), hint: "WPM including mistakes" },
+                { label: "characters",  value: `${correctChars} / ${incorrectChars}`, hint: "correct / incorrect" },
+                { label: "consistency", value: `${consistency}%`, hint: "how steady your speed was" },
+                { label: "time",        value: formatTime(elapsedMs), hint: "test duration" },
+              ].map(({ label, value, hint }) => (
+                <motion.div key={label} title={hint} whileHover={{ y: -2 }} className="cursor-default">
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
                   <span className="text-2xl font-bold tabular-nums" style={{ color: themeColors.primary }}>
                     {value}
                   </span>
-                </div>
+                </motion.div>
               ))}
 
               {/* Action buttons */}
               <div className="ml-auto flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={restartSame} title="Try again (same text)" className="rounded-full h-9 w-9">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
-                  </svg>
-                </Button>
-                <Button size="icon" onClick={newSeed} title="New test" className="rounded-full h-9 w-9" style={{ backgroundColor: themeColors.primary, color: themeColors.primaryFg }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M16 3h5v5" /><path d="M4 20 21 3" /><path d="M21 16v5h-5" /><path d="M15 15 21 21" /><path d="M4 4l5 5" />
-                  </svg>
-                </Button>
+                <AnimatedIconButton Icon={RotateCCWIcon} title="Try again (same text)" onClick={restartSame} color={themeColors.primary} fg={themeColors.primaryFg} />
+                <AnimatedIconButton Icon={RefreshCWIcon} title="New test" onClick={newSeed} primary color={themeColors.primary} fg={themeColors.primaryFg} />
               </div>
-            </div>
+            </motion.div>
           </div>
 
           {/* Key heatmap */}
-          <div className="px-0 pt-4 pb-4">
+          <motion.div variants={resultItem} className="px-0 pt-4 pb-4">
             <span className="mb-4 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Key Heatmap</span>
             <div className="space-y-1.5">
               {QWERTY_ROWS.map((row, ri) => (
                 <div key={ri} className="flex justify-center gap-1.5">
-                  {row.map((key) => {
+                  {row.map((key, ki) => {
                     const rate = getErrorRate(key);
                     const bg =
                       rate < 0   ? "bg-muted/30 text-muted-foreground/40" :
@@ -844,10 +987,19 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
                       rate < 0.2 ? "bg-amber-400/25 text-amber-600 dark:text-amber-400" :
                       rate < 0.4 ? "bg-orange-500/35 text-orange-600 dark:text-orange-400" :
                                    "bg-red-500/45 text-red-600 dark:text-red-400";
+                    const total = getKeyTotal(key);
                     return (
-                      <div key={key} className={cn("flex h-8 w-8 items-center justify-center rounded text-xs font-mono font-semibold uppercase", bg)}>
+                      <motion.div
+                        key={key}
+                        title={rate < 0 ? `${key}: not typed` : `${key}: ${Math.round(rate * 100)}% errors (${total} presses)`}
+                        initial={{ opacity: 0, scale: 0.6 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        whileHover={{ scale: 1.15, y: -2 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 20, delay: 0.35 + ri * 0.05 + ki * 0.02 }}
+                        className={cn("flex h-8 w-8 cursor-default items-center justify-center rounded text-xs font-mono font-semibold uppercase", bg)}
+                      >
                         {key}
-                      </div>
+                      </motion.div>
                     );
                   })}
                 </div>
@@ -859,9 +1011,9 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
                 <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-muted/40" />not typed</span>
               </p>
             </div>
-          </div>
+          </motion.div>
 
-        </div>
+        </motion.div>
       ) : (
         /* ---------------------------------------------------------------- */
         /* Typing area                                                        */
@@ -919,22 +1071,52 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
           />
 
           {/* Unfocused overlay */}
-          {!isFocused && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-sm bg-background/70 backdrop-blur-[2px]">
-              <span className="text-sm text-muted-foreground/70 select-none">click to focus</span>
-            </div>
-          )}
+          <AnimatePresence>
+            {!isFocused && (
+              <motion.div
+                key="focus-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/70 backdrop-blur-[3px]"
+              >
+                <motion.span
+                  initial={{ y: 6, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 4, opacity: 0 }}
+                  className="flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-4 py-1.5 text-sm text-muted-foreground shadow-sm select-none"
+                >
+                  <motion.span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{ backgroundColor: themeColors.primary }}
+                    animate={{ scale: [1, 1.5, 1], opacity: [1, 0.5, 1] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                  click or start typing to focus
+                </motion.span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Text viewport */}
-          <div className={cn("relative overflow-hidden", testMode === "code" ? "h-[10rem]" : "h-[6.75rem]")}>
-            <div ref={textRef} className={cn("text-viewport", testMode === "code" && "whitespace-pre")}>
+          <motion.div
+            key={`viewport-${seed}-${testMode}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className={cn("relative overflow-hidden", testMode === "code" ? "h-[10rem]" : "h-[6.75rem]")}
+          >
+            {/* keyed by text: a new text remounts every span so no stale
+                imperative colouring survives (e.g. zen auto-continue) */}
+            <div key={text} ref={textRef} className={cn("text-viewport", testMode === "code" && "whitespace-pre")}>
               {testMode === "code" ? text.split("").map((char, index) => (
                 <span key={index} ref={(node) => { spanRefs.current[index] = node; }}
                   className="relative inline text-muted-foreground/50"
                 >{char}</span>
               )) : renderWords(text, spanRefs, wordRefs)}
             </div>
-          </div>
+          </motion.div>
 
           {/* Caret */}
           <div
@@ -951,52 +1133,43 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
         </div>
       )}
       {/* Zen mode — floating home button */}
-      {zenMode && (
-        <div className={cn(
-          "fixed bottom-6 left-6 z-50 flex items-center gap-2 transition-opacity duration-300",
-          hasStarted ? "opacity-0 hover:opacity-100" : "opacity-100",
-        )}>
-          <a
-            href="/"
-            title="Return to homepage"
-            className="flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur-md transition-colors hover:text-foreground hover:bg-muted"
+      <AnimatePresence>
+        {zenMode && (
+          <motion.div
+            key="zen-controls"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ type: "spring", stiffness: 320, damping: 28 }}
+            className={cn(
+              "fixed bottom-6 left-6 z-50 flex items-center gap-2 transition-opacity duration-300",
+              hasStarted ? "opacity-0 hover:opacity-100" : "opacity-100",
+            )}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-            </svg>
-            Home
-          </a>
-          <button
-            type="button"
-            title="Exit zen mode"
-            onClick={toggleZen}
-            className="flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur-md transition-colors hover:text-foreground hover:bg-muted"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            Exit zen
-          </button>
-          <button
-            type="button"
-            title="Go back"
-            onClick={() => window.history.back()}
-            className="flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur-md transition-colors hover:text-foreground hover:bg-muted"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
-            </svg>
-            Go back
-          </button>
-        </div>
-      )}
+            <ZenPill Icon={HomeIcon} label="Home" title="Return to homepage" href="/" />
+            <ZenPill Icon={LogoutIcon} label="Exit zen" title="Exit zen mode" onClick={toggleZen} />
+            <ZenPill Icon={ArrowLeftIcon} label="Go back" title="Go back" onClick={() => window.history.back()} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Caps lock toast */}
-      {capsLock && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-600 shadow-lg backdrop-blur-sm dark:text-amber-400">
-          ⇪ CAPS LOCK is on
-        </div>
-      )}
+      <AnimatePresence>
+        {capsLock && (
+          <motion.div
+            key="caps"
+            role="status"
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 420, damping: 26 }}
+            className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-600 shadow-lg backdrop-blur-sm dark:text-amber-400"
+          >
+            <motion.span animate={{ y: [0, -2, 0] }} transition={{ duration: 0.9, repeat: Infinity }}>⇪</motion.span>
+            CAPS LOCK is on
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

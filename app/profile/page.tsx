@@ -13,6 +13,7 @@ import {
 import { SiteNavbar } from "@/components/site-navbar";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
+import { effectiveStreak } from "@/lib/streak";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -77,11 +78,12 @@ export default function ProfilePage() {
       .limit(200)
       .then(({ data }) => { setResults(data ?? []); setFetching(false); });
     (supabase.from("streaks" as any) as any)
-      .select("current_streak, longest_streak")
+      .select("current_streak, longest_streak, last_test_date")
       .eq("user_id", user.id)
-      .single()
+      .maybeSingle()
       .then(({ data }: any) => {
-        if (data) setStreak({ current: data.current_streak, longest: data.longest_streak });
+        // current_streak is only recalculated on insert; a lapsed streak is 0
+        if (data) setStreak({ current: effectiveStreak(data.current_streak, data.last_test_date), longest: data.longest_streak });
       });
   }, [user]);
 

@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { Copy, Check, Flag, Crown, Timer } from "lucide-react";
+import { Flag, Crown, Timer } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { CopyIcon } from "@/components/animated-icons/copy";
+import { CheckIcon } from "@/components/animated-icons/check";
+import { PlayIcon } from "@/components/animated-icons/play";
+import { useAnimatedIcon } from "@/components/animated-icons/use-animated-icon";
 import { toast } from "sonner";
 import { useRaceRoom, type RacePlayer, type RaceConfig } from "@/hooks/use-race-room";
 import { SiteNavbar } from "@/components/site-navbar";
@@ -492,7 +497,7 @@ export default function RaceRoomPage() {
 
   const roomCode   = (params.code as string).toUpperCase();
   const playerName = user?.user_metadata?.username ?? user?.email?.split("@")[0] ?? "Anonymous";
-  const isHost     = searchParams.get("host") === "1";
+  const wantsHost  = searchParams.get("host") === "1";
 
   // All hooks must be called before any conditional return
   const [raceMode, setRaceMode]       = useState<"words" | "time">("words");
@@ -511,8 +516,15 @@ export default function RaceRoomPage() {
   const { isMuted, theme } = useAppSettings();
   const ACCENT = THEME_COLORS[theme].primary;
 
-  const { players, phase, countdown, raceSeed, raceConfig, isConnected, isRoomFull, broadcastProgress, updateConfig, startRace, resetRace, endRace } =
-    useRaceRoom({ roomCode, playerId, playerName, isHost: isHost && !!user });
+  // Only join once auth has resolved and the user is signed in — otherwise a
+  // logged-out visitor occupied a slot and words-mode races could never end.
+  const { players, phase, countdown, raceSeed, raceConfig, isConnected, isRoomFull, broadcastProgress, updateConfig, startRace, resetRace, endRace, isHost } =
+    useRaceRoom({ roomCode, playerId, playerName, isHost: wantsHost && !!user, enabled: !loading && !!user });
+
+  // Refs so the race timer below always sees the current host / player count
+  const isHostRef = useRef(isHost);
+  const playerCountRef = useRef(players.length);
+  useEffect(() => { isHostRef.current = isHost; playerCountRef.current = players.length; }, [isHost, players.length]);
 
   const activeConfig = raceConfig ?? hostConfig;
 
@@ -527,7 +539,7 @@ export default function RaceRoomPage() {
     setTimeLeft(activeConfig.duration);
     const id = setInterval(() => {
       setTimeLeft((t) => {
-        if (t <= 1) { clearInterval(id); if (isHost || players.length === 1) endRace(); return 0; }
+        if (t <= 1) { clearInterval(id); if (isHostRef.current || playerCountRef.current === 1) endRace(); return 0; }
         return t - 1;
       });
     }, 1000);
@@ -535,17 +547,40 @@ export default function RaceRoomPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, activeConfig.mode, activeConfig.duration]);
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(roomCode);
-    toast.success("Code copied!");
+  // Clipboard can reject (insecure context / denied permission) — don't claim success
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      toast.success("Code copied!");
+    } catch {
+      toast.error("Couldn't copy — select the code manually");
+    }
   };
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/race/${roomCode}`);
-    setCopied(true);
-    toast.success("Link copied!");
-    setTimeout(() => setCopied(false), 2000);
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/race/${roomCode}`);
+      setCopied(true);
+      toast.success("Link copied!");
+    } catch {
+      toast.error("Couldn't copy the invite link");
+    }
   };
+
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(id);
+  }, [copied]);
+
+  const { iconRef: copyIconRef, triggerProps: copyIconTrigger } = useAnimatedIcon();
+  const { iconRef: checkIconRef, start: checkIconStart } = useAnimatedIcon();
+  const { iconRef: playIconRef, triggerProps: playIconTrigger } = useAnimatedIcon();
+
+  // Play the check-mark draw animation whenever a copy succeeds
+  useEffect(() => {
+    if (copied) requestAnimationFrame(() => checkIconStart());
+  }, [copied, checkIconStart]);
 
   const finishedCount = players.filter((p) => p.finishedAt !== null).length;
   const allFinished   = players.length > 0 && finishedCount === players.length;
@@ -553,7 +588,7 @@ export default function RaceRoomPage() {
   useEffect(() => {
     if (allFinished && phase === "racing" && activeConfig.mode === "words" && (isHost || players.length === 1)) endRace();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allFinished, phase]);
+  }, [allFinished, phase, isHost]);
 
   // Auth guard — after all hooks
   if (loading) {
@@ -596,8 +631,21 @@ export default function RaceRoomPage() {
             title={isConnected ? "Connected" : "Connecting…"}
           />
         </div>
-        <Button variant="ghost" size="sm" onClick={copyLink} className="gap-1.5 text-xs">
-          {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+        <Button variant="ghost" size="sm" onClick={copyLink} className="gap-1.5 text-xs" {...copyIconTrigger}>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={copied ? "check" : "copy"}
+              initial={{ scale: 0.4, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.4, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 500, damping: 25 }}
+              className="flex"
+            >
+              {copied
+                ? <CheckIcon ref={checkIconRef} size={14} className="flex text-green-500" />
+                : <CopyIcon ref={copyIconRef} size={14} className="flex" />}
+            </motion.span>
+          </AnimatePresence>
           <span className="hidden sm:inline">{copied ? "Copied!" : "Invite"}</span>
         </Button>
         <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-destructive" onClick={() => window.location.href = "/race"}>
@@ -725,9 +773,11 @@ export default function RaceRoomPage() {
                   size="lg"
                   onClick={() => startRace(hostConfig)}
                   disabled={players.length < 2}
-                  className="w-full font-bold text-white hover:opacity-90"
-                  style={{ backgroundColor: ACCENT }}
+                  className="w-full gap-2 font-bold text-white hover:opacity-90 hover:-translate-y-0.5 hover:shadow-lg"
+                  style={{ backgroundColor: ACCENT, boxShadow: players.length >= 2 ? `0 8px 24px -10px ${ACCENT}` : undefined }}
+                  {...playIconTrigger}
                 >
+                  <PlayIcon ref={playIconRef} size={16} className="flex" />
                   Start Race
                 </Button>
                 {players.length < 2 && (
@@ -751,14 +801,22 @@ export default function RaceRoomPage() {
             {/* Countdown */}
             {phase === "countdown" && (
               <div className="flex h-48 items-center justify-center rounded-xl border border-border/40 bg-card">
-                {countdown > 0 ? (
-                  <div className="text-center">
-                    <p className="text-7xl font-black tabular-nums leading-none">{countdown}</p>
-                    <p className="mt-2 text-sm text-muted-foreground">get ready…</p>
-                  </div>
-                ) : (
-                  <p className="text-5xl font-black animate-pulse" style={{ color: ACCENT }}>GO!</p>
-                )}
+                <div className="text-center">
+                  <AnimatePresence mode="popLayout">
+                    <motion.p
+                      key={countdown}
+                      initial={{ scale: 1.8, opacity: 0, filter: "blur(6px)" }}
+                      animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }}
+                      exit={{ scale: 0.5, opacity: 0 }}
+                      transition={{ type: "spring", stiffness: 380, damping: 22 }}
+                      className="text-7xl font-black tabular-nums leading-none"
+                      style={countdown === 0 ? { color: ACCENT } : undefined}
+                    >
+                      {countdown > 0 ? countdown : "GO!"}
+                    </motion.p>
+                  </AnimatePresence>
+                  <p className="mt-2 text-sm text-muted-foreground">get ready…</p>
+                </div>
               </div>
             )}
 

@@ -32,7 +32,13 @@ export const useTypingStore = create<TypingState>((set) => ({
         ? state
         : { isRunning: true, startedAt: state.startedAt ?? Date.now() }
     ),
-  stop: () => set({ isRunning: false }),
+  // Freeze the final elapsed time — otherwise results use the last 100ms tick
+  stop: () =>
+    set((state) =>
+      state.isRunning && state.startedAt
+        ? { isRunning: false, elapsedMs: Date.now() - state.startedAt }
+        : { isRunning: false }
+    ),
   tick: () =>
     set((state) =>
       state.startedAt

@@ -56,19 +56,27 @@ export function sendChallengeNotification(
   roomCode: string,
 ) {
   const channel = supabase.channel(`challenges:${friendUserId}`);
-
-  channel.subscribe((status) => {
-    if (status !== "SUBSCRIBED") return;
-
+  const send = () =>
     channel.send({
       type: "broadcast",
       event: "challenge",
       payload: { fromUsername, roomCode } satisfies ChallengePayload,
     });
 
+  // supabase.channel() returns the existing channel if a previous challenge to
+  // the same friend is still open; subscribe() is then a no-op whose callback
+  // never fires, which silently dropped the second challenge.
+  if (channel.state === "joined") {
+    send();
+    return;
+  }
+
+  channel.subscribe((status) => {
+    if (status !== "SUBSCRIBED") return;
+    send();
     // Give the message time to propagate before cleanup
     setTimeout(() => {
-      channel.unsubscribe();
+      supabase.removeChannel(channel);
     }, 2000);
   });
 }

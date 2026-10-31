@@ -262,6 +262,7 @@ export default function FriendsPage() {
       if (error) throw error;
       toast.success("Friend request sent!");
       setSearchResults((prev) => prev.filter((r) => r.id !== friendId));
+      fetchFriends(); // show it in the Sent tab right away
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to send friend request");
     } finally {

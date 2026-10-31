@@ -66,6 +66,12 @@ export const useAppSettings = create<AppSettings>()(
       setFont: (fontFamily) => set({ fontFamily }),
       setSoundPack: (soundPack) => set({ soundPack }),
     }),
-    { name: "typearena_settings" },
+    {
+      name: "typearena_settings",
+      // Rehydrated on mount by <SettingsSync/> — reading localStorage while the
+      // store is created made the first client render differ from the server
+      // render (hydration mismatch: theme colours / icons stuck on defaults).
+      skipHydration: true,
+    },
   ),
 );

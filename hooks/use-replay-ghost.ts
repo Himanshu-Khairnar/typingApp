@@ -41,8 +41,11 @@ export function useReplayGhost(mode: string, config: string | number) {
     setHasGhost(false);
   }, [mode, config]);
 
-  const tick = useCallback(() => {
-    if (!ghostData.current || !isActive) return;
+  // Run animation loop when active
+  useEffect(() => {
+    if (!isActive) return;
+    const tick = () => {
+    if (!ghostData.current) return;
 
     const elapsed = performance.now() - startTime.current;
     const keystrokes = ghostData.current.keystrokes;
@@ -65,6 +68,11 @@ export function useReplayGhost(mode: string, config: string | number) {
     } else {
       setIsActive(false);
     }
+    };
+    rafId.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafId.current) cancelAnimationFrame(rafId.current);
+    };
   }, [isActive]);
 
   const start = useCallback(() => {
@@ -73,18 +81,6 @@ export function useReplayGhost(mode: string, config: string | number) {
     startTime.current = performance.now();
     setIsActive(true);
   }, []);
-
-  // Run animation loop when active
-  useEffect(() => {
-    if (isActive) {
-      rafId.current = requestAnimationFrame(tick);
-    }
-    return () => {
-      if (rafId.current) {
-        cancelAnimationFrame(rafId.current);
-      }
-    };
-  }, [isActive, tick]);
 
   const stop = useCallback(() => {
     setIsActive(false);

@@ -58,23 +58,36 @@ export function useTypingEngine(
 
   const handleInputChange = useCallback(
     (value: string) => {
+      // Ignore input once the test is finished (e.g. time ran out)
+      const state = useTypingStore.getState();
+      if (!state.isRunning && state.startedAt !== null) return;
+
+      const typed = state.typed;
       // Only allow typing up to text length
       const next = value.slice(0, text.length);
+
+      // Block deleting into a correctly completed word (also covers
+      // multi-char deletions like Ctrl+Backspace)
+      if (next.length < typed.length) {
+        let floor = 0;
+        for (let i = next.length; i < typed.length; i++) {
+          if (text[i] === " " && typed[i] === " ") {
+            const wordStart = text.lastIndexOf(" ", i - 1) + 1;
+            const wordCorrect = text.slice(wordStart, i).split("").every((c, k) => typed[wordStart + k] === c);
+            if (wordCorrect) floor = i + 1;
+          }
+        }
+        if (floor > next.length) {
+          if (floor >= typed.length) return;
+          setTyped(typed.slice(0, floor));
+          return;
+        }
+      }
 
       // If everything is deleted, reset the test
       if (next.length === 0 && typed.length > 0) {
         reset(text);
         return;
-      }
-
-      // Block backspace past a correctly completed word
-      if (next.length < typed.length) {
-        const removedIdx = next.length;
-        if (text[removedIdx] === " " && typed[removedIdx] === " ") {
-          const wordStart = text.lastIndexOf(" ", removedIdx - 1) + 1;
-          const wordCorrect = text.slice(wordStart, removedIdx).split("").every((c, i) => typed[wordStart + i] === c);
-          if (wordCorrect) return;
-        }
       }
 
       // Fire keystroke callback and track errors when a character is added
@@ -92,11 +105,11 @@ export function useTypingEngine(
       setTyped(next);
 
       // Start timer on first character
-      if (next.length > 0 && !isRunning) {
+      if (next.length > 0 && !state.isRunning) {
         start();
       }
     },
-    [reset, setTyped, start, text, text.length, typed.length, isRunning, onKeystroke],
+    [reset, setTyped, start, text, onKeystroke],
   );
 
   const charStates = useMemo<CharState[]>(
