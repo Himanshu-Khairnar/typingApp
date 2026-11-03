@@ -24,13 +24,37 @@ export function useTypingTimer() {
 // ---------------------------------------------------------------------------
 // Main typing engine hook — NO elapsedMs subscription, no timer effect.
 // ---------------------------------------------------------------------------
+/** Max letters accepted past the end of a word (Monkeytype caps these too). */
+const MAX_EXTRAS = 15;
+
 export function useTypingEngine(
   words: string[],
-  { onKeystroke }: { onKeystroke?: (key: string, isCorrect: boolean) => void } = {},
+  {
+    onKeystroke,
+    allowExtras = false,
+  }: {
+    onKeystroke?: (key: string, isCorrect: boolean) => void;
+    /** Letters typed at a word end (where a space is expected) are kept as
+     *  "extra" letters on that word instead of replacing the space. */
+    allowExtras?: boolean;
+  } = {},
 ) {
   const text = useMemo(() => words.join(" "), [words]);
   const typed = useTypingStore((state) => state.typed);
   const setTyped = useTypingStore((state) => state.setTyped);
+  const extras = useTypingStore((state) => state.extras);
+  const setExtras = useTypingStore((state) => state.setExtras);
+
+  // Word index of every character position (and one past the end)
+  const wordAt = useMemo(() => {
+    const arr = new Int32Array(text.length + 1);
+    let w = 0;
+    for (let i = 0; i <= text.length; i++) {
+      arr[i] = w;
+      if (text[i] === " ") w++;
+    }
+    return arr;
+  }, [text]);
 
   const isFocused = useTypingStore((state) => state.isFocused);
   const setFocused = useTypingStore((state) => state.setFocused);
@@ -63,17 +87,51 @@ export function useTypingEngine(
       if (!state.isRunning && state.startedAt !== null) return;
 
       const typed = state.typed;
+      const curExtras = state.extras;
+      const pos = typed.length;
+      const curWord = wordAt[pos];
+      const curWordExtras = curExtras[curWord] ?? "";
+
+      if (allowExtras && text[pos] === " ") {
+        // A non-space letter where the word's trailing space is expected →
+        // extra letter on this word (the space is still expected next).
+        if (value.length === pos + 1 && value.startsWith(typed) && value[pos] !== " ") {
+          if (curWordExtras.length >= MAX_EXTRAS) return;
+          const nextExtras = curExtras.slice();
+          nextExtras[curWord] = curWordExtras + value[pos];
+          setExtras(nextExtras);
+          totalKeystrokesRef.current += 1;
+          totalErrorsRef.current += 1;
+          onKeystroke?.(value[pos], false);
+          return;
+        }
+        // Backspace removes extra letters before real ones
+        if (curWordExtras && value.length < pos) {
+          const nextExtras = curExtras.slice();
+          if (value.length === pos - 1) {
+            nextExtras[curWord] = curWordExtras.slice(0, -1);
+            setExtras(nextExtras);
+            return;
+          }
+          // Multi-char delete (ctrl+backspace) wipes them along with the word
+          nextExtras[curWord] = "";
+          setExtras(nextExtras);
+        }
+      }
+
       // Only allow typing up to text length
       const next = value.slice(0, text.length);
 
       // Block deleting into a correctly completed word (also covers
-      // multi-char deletions like Ctrl+Backspace)
+      // multi-char deletions like Ctrl+Backspace). A word with extra
+      // letters is not correct, so it can be re-entered.
       if (next.length < typed.length) {
         let floor = 0;
         for (let i = next.length; i < typed.length; i++) {
           if (text[i] === " " && typed[i] === " ") {
             const wordStart = text.lastIndexOf(" ", i - 1) + 1;
-            const wordCorrect = text.slice(wordStart, i).split("").every((c, k) => typed[wordStart + k] === c);
+            const wordCorrect = !curExtras[wordAt[i]]
+              && text.slice(wordStart, i).split("").every((c, k) => typed[wordStart + k] === c);
             if (wordCorrect) floor = i + 1;
           }
         }
@@ -109,7 +167,7 @@ export function useTypingEngine(
         start();
       }
     },
-    [reset, setTyped, start, text, onKeystroke],
+    [reset, setTyped, setExtras, start, text, wordAt, allowExtras, onKeystroke],
   );
 
   const charStates = useMemo<CharState[]>(
@@ -128,8 +186,10 @@ export function useTypingEngine(
       if (typed[i] === text[i]) correct += 1;
       else incorrect += 1;
     }
-    return { correct, incorrect };
-  }, [typed, text]);
+    let extra = 0;
+    for (const e of extras) if (e) extra += e.length;
+    return { correct, incorrect: incorrect + extra, extra };
+  }, [typed, text, extras]);
 
   useEffect(() => {
     if (typed.length >= text.length && text.length > 0) {
@@ -143,7 +203,7 @@ export function useTypingEngine(
   // via useTypingTimer() for live updates.
   const elapsedMs = useTypingStore.getState().elapsedMs;
   const minutes = Math.max(elapsedMs / 60000, 1 / 600);
-  const grossWpm = typed.length / 5 / minutes;
+  const grossWpm = (typed.length + totals.extra) / 5 / minutes;
   const netWpm = Math.max(totals.correct / 5 / minutes, 0);
   const accuracy =
     totalKeystrokesRef.current === 0
@@ -179,6 +239,7 @@ export function useTypingEngine(
   return {
     text,
     typed,
+    extras,
     charStates,
     currentIndex: typed.length,
     isComplete: typed.length >= text.length,

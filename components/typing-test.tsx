@@ -73,6 +73,7 @@ function renderWords(
   text: string,
   spanRefs: React.MutableRefObject<(HTMLSpanElement | null)[]>,
   wordRefs: React.MutableRefObject<(HTMLSpanElement | null)[]>,
+  extraRefs: React.MutableRefObject<(HTMLSpanElement | null)[]>,
 ) {
   const wordList = text.split(" ");
   let charIndex = 0;
@@ -93,6 +94,9 @@ function renderWords(
       <span key={`word-${wordIndex}`} ref={(node) => { wordRefs.current[wordIndex] = node; }}
         className="inline-block whitespace-nowrap">
         {wordChars}
+        {/* letters typed past the end of the word — filled imperatively */}
+        <span data-extra="" ref={(node) => { extraRefs.current[wordIndex] = node; }}
+          className="text-destructive/70" />
         {wordIndex < wordList.length - 1 && (
           <span ref={(node) => { spanRefs.current[spaceIndex] = node; }}
             className="relative inline text-muted-foreground/50"
@@ -358,6 +362,8 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   const textRef = useRef<HTMLDivElement | null>(null);
   const spanRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const wordRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const extraRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const prevExtrasRef = useRef<string[]>([]);
   const prevTypedLenRef = useRef(0);
   const caretRef = useRef<HTMLDivElement>(null);
   const viewportOffsetRef = useRef(0);
@@ -365,6 +371,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   const {
     text,
     typed,
+    extras,
     currentIndex,
     isComplete,
     isFocused,
@@ -381,7 +388,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     isRunning,
     startedAt,
     racePayload,
-  } = useTypingEngine(words, { onKeystroke: handleKeystroke });
+  } = useTypingEngine(words, { onKeystroke: handleKeystroke, allowExtras: testMode !== "code" });
 
   // Personal best for the *same* test config — comparing a 15s test against
   // a 100-word test made the PB badge meaningless.
@@ -464,12 +471,20 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     const caretEl = caretRef.current;
     if (!textNode || !caretEl || text.length === 0) return;
 
-    const atEnd = currentIndex >= text.length;
     const span = spanRefs.current[Math.min(currentIndex, text.length - 1)];
     if (!span) return;
 
-    const top = span.offsetTop;
-    const h = span.offsetHeight;
+    // Sit after the char at the very end, or after a word's extra letters
+    // when its trailing space is the next expected char.
+    let anchor: HTMLElement = span;
+    let atEnd = currentIndex >= text.length;
+    if (!atEnd && text[currentIndex] === " ") {
+      const extra = span.parentElement?.querySelector<HTMLElement>("[data-extra]");
+      if (extra?.textContent) { anchor = extra; atEnd = true; }
+    }
+
+    const top = anchor.offsetTop;
+    const h = anchor.offsetHeight;
     const lineH = parseFloat(getComputedStyle(textNode).lineHeight) || h;
     const lineIdx = Math.floor((top + h / 2) / lineH);
     const offset = Math.max(0, lineIdx - 1) * lineH;
@@ -479,16 +494,27 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     const nextTransform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
     if (textNode.style.transform !== nextTransform) textNode.style.transform = nextTransform;
 
-    const x = atEnd ? span.offsetLeft + span.offsetWidth : span.offsetLeft;
+    const x = atEnd ? anchor.offsetLeft + anchor.offsetWidth : anchor.offsetLeft;
     const y = caretStyle === "underline" ? top + h - 2 : top;
     caretEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     caretEl.style.height = caretStyle === "underline" ? "2px" : `${h}px`;
     caretEl.style.width = caretStyle === "beam" ? "" : `${Math.max(span.offsetWidth, 8)}px`;
-  }, [currentIndex, text.length, caretStyle]);
+  }, [currentIndex, text, caretStyle]);
 
-  // Runs after every typed change, no setState
+  // Runs after every typed change, no setState. DOM text changes come first so
+  // the caret is measured against the final layout.
   useLayoutEffect(() => {
-    layoutCaret();
+    // Extra letters — only touch words whose extras changed
+    const changedExtraWords = new Set<number>();
+    const prevExtras = prevExtrasRef.current;
+    for (let wi = 0, n = Math.max(prevExtras.length, extras.length); wi < n; wi++) {
+      const e = extras[wi] ?? "";
+      if ((prevExtras[wi] ?? "") === e) continue;
+      const el = extraRefs.current[wi];
+      if (el) el.textContent = e;
+      changedExtraWords.add(wi);
+    }
+    prevExtrasRef.current = extras;
 
     // Imperative char color updates — only touch changed range
     const prevLen = prevTypedLenRef.current;
@@ -524,30 +550,33 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     prevTypedLenRef.current = curLen;
 
     // Imperative word underline — skip for code mode (no word spans)
-    if (testMode === "code") return;
-    const currentWordIndex = (typed.match(/ /g) ?? []).length;
-    const wordList = text.split(" ");
-    let ci = 0;
-    for (let wi = 0; wi < wordList.length; wi++) {
-      const wStart = ci;
-      const wEnd = ci + wordList[wi].length;
-      if (wEnd + 1 >= lo && wStart <= hi + 1) {
-        const wordSpan = wordRefs.current[wi];
-        if (wordSpan) {
-          const isPast = wi < currentWordIndex;
-          const hasError = isPast && Array.from({ length: wordList[wi].length }, (_, k) => {
-            const idx = wStart + k;
-            return idx < curLen && typed[idx] !== text[idx];
-          }).some(Boolean);
-          wordSpan.className = hasError
-            ? "inline-block whitespace-nowrap underline decoration-destructive decoration-2 underline-offset-4"
-            : "inline-block whitespace-nowrap";
+    if (testMode !== "code") {
+      const currentWordIndex = (typed.match(/ /g) ?? []).length;
+      const wordList = text.split(" ");
+      let ci = 0;
+      for (let wi = 0; wi < wordList.length; wi++) {
+        const wStart = ci;
+        const wEnd = ci + wordList[wi].length;
+        if ((wEnd + 1 >= lo && wStart <= hi + 1) || changedExtraWords.has(wi)) {
+          const wordSpan = wordRefs.current[wi];
+          if (wordSpan) {
+            const isPast = wi < currentWordIndex;
+            const hasError = isPast && (!!extras[wi] || Array.from({ length: wordList[wi].length }, (_, k) => {
+              const idx = wStart + k;
+              return idx < curLen && typed[idx] !== text[idx];
+            }).some(Boolean));
+            wordSpan.className = hasError
+              ? "inline-block whitespace-nowrap underline decoration-destructive decoration-2 underline-offset-4"
+              : "inline-block whitespace-nowrap";
+          }
         }
+        ci = wEnd + 1;
       }
-      ci = wEnd + 1;
     }
+
+    layoutCaret();
     // runId: a restart remounts the text layer, so the fresh caret needs placing
-  }, [typed, testMode, text, layoutCaret, runId, showResults]);
+  }, [typed, extras, testMode, text, layoutCaret, runId, showResults]);
 
   useEffect(() => {
     window.addEventListener("resize", layoutCaret);
@@ -563,7 +592,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
           className="relative inline text-muted-foreground/50"
         >{char}</span>
       ))
-      : renderWords(text, spanRefs, wordRefs),
+      : renderWords(text, spanRefs, wordRefs, extraRefs),
     [text, testMode],
   );
 
@@ -577,11 +606,12 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
       if (ch !== undefined) span.textContent = ch === " " ? "\u00A0" : ch;
     }
     for (const wordSpan of wordRefs.current) {
-      if (wordSpan) {
-        wordSpan.className = "inline-block whitespace-nowrap";
-        wordSpan.style.opacity = "";
-      }
+      if (wordSpan) wordSpan.className = "inline-block whitespace-nowrap";
     }
+    for (const extraSpan of extraRefs.current) {
+      if (extraSpan) extraSpan.textContent = "";
+    }
+    prevExtrasRef.current = [];
     if (textRef.current) {
       textRef.current.style.transition = "none";
       textRef.current.style.transform = "";
