@@ -35,7 +35,7 @@ import {
 } from "recharts";
 import { useLocalHistory } from "@/hooks/use-local-history";
 import { useKeyHeatmap } from "@/hooks/use-key-heatmap";
-import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
+import { useAppSettings, THEME_COLORS, CARET_SPEED_MS } from "@/lib/app-settings";
 
 // ---------------------------------------------------------------------------
 // Helpers / constants
@@ -129,13 +129,24 @@ const LiveStatsBar = memo(function LiveStatsBar({
   wpmOverTime: TimePoint[]; themeColor: string;
 }) {
   const elapsedMs = useTypingTimer();
+  const correct = useMemo(() => {
+    let n = 0;
+    for (let i = 0; i < typed.length; i++) if (typed[i] === text[i]) n++;
+    return n;
+  }, [typed, text]);
+  // Measured against the live clock so pausing visibly drops the number
+  const liveWpm = elapsedMs >= 1000 ? Math.round(correct / 5 / (elapsedMs / 60000)) : 0;
   return (
     <div className={cn("mb-3 flex h-8 items-center gap-5 text-sm transition-opacity duration-200", hasStarted && !zenMode ? "opacity-100" : "opacity-0 pointer-events-none")}>
       {testMode === "time" && (
-        <span className="tabular-nums font-semibold text-foreground">
-          {Math.max(0, timeLimit - Math.floor(elapsedMs / 1000))}<span className="text-xs font-normal text-muted-foreground">s</span>
+        <span className="text-2xl font-bold tabular-nums leading-none" style={{ color: themeColor }}>
+          {Math.max(0, timeLimit - Math.floor(elapsedMs / 1000))}
         </span>
       )}
+      <span className="tabular-nums leading-none text-muted-foreground">
+        <span className="text-2xl font-bold" style={{ color: themeColor }}>{liveWpm}</span>
+        <span className="ml-1 text-xs">wpm</span>
+      </span>
       {testMode === "words" && (
         <span className="tabular-nums text-xs text-muted-foreground">
           {Math.max(0, text.split(" ").length - (typed.split(" ").length - 1))} <span>words left</span>
@@ -275,7 +286,9 @@ interface TypingTestProps {
 }
 
 export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTestProps) {
-  const { theme } = useAppSettings();
+  const { theme, caretSpeed } = useAppSettings();
+  // Bumped on every restart so the words fade back in, like Monkeytype
+  const [runId, setRunId] = useState(0);
   // Fixed seed for the server render + hydration, randomised right after mount.
   // Generating it during render gave server and client different words, which
   // caused a hydration error and a full client re-render of the page.
@@ -387,6 +400,10 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   useEffect(() => { liveStatsRef.current = { correctChars, accuracy }; }, [correctChars, accuracy]);
 
   const hasStarted = typed.length > 0;
+  const [timeIsUp, setTimeIsUp] = useState(false);
+  // The typing area unmounts while results show; when it comes back the
+  // caret must be placed again even if typed/text did not change.
+  const showResults = (isComplete || timeIsUp) && !zenMode;
 
   // Consistency — 100 minus the coefficient of variation of WPM samples
   const consistency = useMemo(() => {
@@ -456,10 +473,11 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     const lineH = parseFloat(getComputedStyle(textNode).lineHeight) || h;
     const lineIdx = Math.floor((top + h / 2) / lineH);
     const offset = Math.max(0, lineIdx - 1) * lineH;
-    if (offset !== viewportOffsetRef.current) {
-      viewportOffsetRef.current = offset;
-      textNode.style.transform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
-    }
+    // Compare against the element itself, not a cached offset: other effects
+    // reset the cache, which left a stale scroll on a fresh test.
+    viewportOffsetRef.current = offset;
+    const nextTransform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
+    if (textNode.style.transform !== nextTransform) textNode.style.transform = nextTransform;
 
     const x = atEnd ? span.offsetLeft + span.offsetWidth : span.offsetLeft;
     const y = caretStyle === "underline" ? top + h - 2 : top;
@@ -528,7 +546,8 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
       }
       ci = wEnd + 1;
     }
-  }, [typed, testMode, text, layoutCaret]);
+    // runId: a restart remounts the text layer, so the fresh caret needs placing
+  }, [typed, testMode, text, layoutCaret, runId, showResults]);
 
   useEffect(() => {
     window.addEventListener("resize", layoutCaret);
@@ -578,12 +597,14 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     reset(text);
     resetHeatmap();
     setIsNewPB(false);
+    setRunId((r) => r + 1);
     inputRef.current?.focus();
   }, [reset, text, resetHeatmap, resetVisuals]);
 
   const newSeed = useCallback(() => {
     resetVisuals();
     setSeed(generateSeed());
+    setRunId((r) => r + 1);
     spanRefs.current = [];
     wordRefs.current = [];
     resetHeatmap();
@@ -607,7 +628,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [restartSame, newSeed]);
 
-  const [timeIsUp, setTimeIsUp] = useState(false);
   const handleTimeUp = useCallback(() => { setTimeIsUp(true); stop(); }, [stop]);
 
   // Reset timeIsUp when starting a new test
@@ -647,12 +667,10 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   // Reset chart on new test
   useEffect(() => { if (!hasStarted) setWpmOverTime([]); }, [hasStarted]);
 
-  // New text → imperative DOM state from the previous text is gone (the text
-  // node is keyed by `text`), so the incremental colouring must start fresh.
-  useLayoutEffect(() => {
-    prevTypedLenRef.current = 0;
-    viewportOffsetRef.current = 0;
-  }, [text]);
+  // No reset of prevTypedLenRef on text change: for one render the new text
+  // is painted against the *old* typed value (the engine resets typed in an
+  // effect), and the follow-up render must clear that whole range. Zeroing the
+  // tracker in between left the new words coloured red.
 
   // Zen mode — auto-continue when words run out (no results screen, no time limit)
   useEffect(() => {
@@ -770,7 +788,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
       {/* ------------------------------------------------------------------ */}
       {/* Results                                                              */}
       {/* ------------------------------------------------------------------ */}
-      {(isComplete || timeIsUp) && !zenMode ? (
+      {showResults ? (
         <motion.div className="w-full space-y-4" variants={resultContainer} initial="hidden" animate="show">
 
           {/* ── Main result ── */}
@@ -1087,10 +1105,10 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
 
           {/* Text viewport */}
           <motion.div
-            key={`viewport-${seed}-${testMode}`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
+            key={`viewport-${seed}-${testMode}-${runId}`}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
             className={cn("relative overflow-hidden", testMode === "code" ? "h-[10rem]" : "h-[6.75rem]")}
           >
             {/* keyed by text: a new text remounts every span so no stale
@@ -1109,7 +1127,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
                   // last so it wins over the block caret's opacity-25
                   !isFocused && "opacity-0",
                 )}
-                style={{ backgroundColor: themeColors.primary }}
+                style={{ backgroundColor: themeColors.primary, "--caret-duration": `${CARET_SPEED_MS[caretSpeed]}ms` } as React.CSSProperties}
               />
             </div>
           </motion.div>

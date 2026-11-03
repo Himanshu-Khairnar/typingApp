@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Keyboard } from "@/components/ui/keyboard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
+import { useAppSettings, THEME_COLORS, CARET_SPEED_MS } from "@/lib/app-settings";
 import { useAuth } from "@/hooks/use-auth";
 
 function generatePlayerId() {
@@ -196,7 +196,8 @@ function TypingArea({ words, phase, onProgress }: {
   phase: "lobby" | "countdown" | "racing" | "finished";
   onProgress: (data: { progress: number; netWpm: number; grossWpm: number; accuracy: number; finishedAt: number | null }) => void;
 }) {
-  const ACCENT = THEME_COLORS[useAppSettings().theme].primary;
+  const { theme: appTheme, caretSpeed } = useAppSettings();
+  const ACCENT = THEME_COLORS[appTheme].primary;
   const elapsedMs = useTypingTimer();
   const inputRef  = useRef<HTMLInputElement | null>(null);
   const textRef   = useRef<HTMLDivElement | null>(null);
@@ -279,10 +280,11 @@ function TypingArea({ words, phase, onProgress }: {
     const h = span.offsetHeight;
     const lineH = parseFloat(getComputedStyle(textNode).lineHeight) || h;
     const offset = Math.max(0, Math.floor((top + h / 2) / lineH) - 1) * lineH;
-    if (offset !== viewportOffsetRef.current) {
-      viewportOffsetRef.current = offset;
-      textNode.style.transform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
-    }
+    // Compare against the element itself, not a cached offset: other effects
+    // reset the cache, which left a stale scroll on a fresh test.
+    viewportOffsetRef.current = offset;
+    const nextTransform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
+    if (textNode.style.transform !== nextTransform) textNode.style.transform = nextTransform;
 
     const x = currentIndex >= text.length ? span.offsetLeft + span.offsetWidth : span.offsetLeft;
     caretEl.style.transform = `translate3d(${x}px, ${top}px, 0)`;
@@ -436,11 +438,11 @@ function TypingArea({ words, phase, onProgress }: {
           <div key={text} ref={textRef} className="text-viewport relative">
             {renderedText}
 
-            {/* Caret \u2014 inside the scrolling layer so it moves with the text */}
+            {/* Caret — inside the scrolling layer so it moves with the text */}
             <div
               ref={caretRef}
               className={cn("pointer-events-none absolute left-0 top-0 -ml-px w-0.5 rounded-full typing-caret typing-caret-blink", isFocused && !isDisabled ? "opacity-100" : "opacity-0")}
-              style={{ backgroundColor: ACCENT }}
+              style={{ backgroundColor: ACCENT, "--caret-duration": `${CARET_SPEED_MS[caretSpeed]}ms` } as React.CSSProperties}
             />
           </div>
         </div>

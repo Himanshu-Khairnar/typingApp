@@ -32,6 +32,18 @@ export const FONT_OPTIONS: { value: MonoFont; label: string }[] = [
   { value: "ibm-plex-mono", label: "IBM Plex Mono" },
 ];
 
+export type CaretSpeed = "off" | "fast" | "medium" | "slow";
+
+/** Caret glide duration — "off" snaps it instantly. */
+export const CARET_SPEED_MS: Record<CaretSpeed, number> = { off: 0, fast: 60, medium: 100, slow: 150 };
+
+export const CARET_SPEED_OPTIONS: { value: CaretSpeed; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "fast", label: "Fast" },
+  { value: "medium", label: "Medium" },
+  { value: "slow", label: "Slow" },
+];
+
 export const SOUND_PACK_OPTIONS: { value: SoundPack; label: string }[] = [
   { value: "synth", label: "Synth" },
   { value: "cherry-mx", label: "Cherry MX" },
@@ -45,11 +57,13 @@ type AppSettings = {
   isMuted: boolean;
   fontFamily: MonoFont;
   soundPack: SoundPack;
+  caretSpeed: CaretSpeed;
   setTheme: (theme: KeyboardThemeName) => void;
   toggleDark: () => void;
   toggleMute: () => void;
   setFont: (font: MonoFont) => void;
   setSoundPack: (pack: SoundPack) => void;
+  setCaretSpeed: (speed: CaretSpeed) => void;
 };
 
 export const useAppSettings = create<AppSettings>()(
@@ -60,11 +74,13 @@ export const useAppSettings = create<AppSettings>()(
       isMuted: false,
       fontFamily: "geist-mono",
       soundPack: "synth",
+      caretSpeed: "medium",
       setTheme: (theme) => set({ theme }),
       toggleDark: () => set((s) => ({ isDark: !s.isDark })),
       toggleMute: () => set((s) => ({ isMuted: !s.isMuted })),
       setFont: (fontFamily) => set({ fontFamily }),
       setSoundPack: (soundPack) => set({ soundPack }),
+      setCaretSpeed: (caretSpeed) => set({ caretSpeed }),
     }),
     {
       name: "typearena_settings",

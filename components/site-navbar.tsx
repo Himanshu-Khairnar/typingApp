@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { effectiveStreak } from "@/lib/streak";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useAppSettings, THEME_COLORS, ALL_THEMES, FONT_OPTIONS, SOUND_PACK_OPTIONS } from "@/lib/app-settings";
+import { useAppSettings, THEME_COLORS, ALL_THEMES, FONT_OPTIONS, SOUND_PACK_OPTIONS, CARET_SPEED_OPTIONS } from "@/lib/app-settings";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,7 +49,7 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
   const userId = user?.id;
   const router = useRouter();
   const pathname = usePathname();
-  const { isDark, isMuted, toggleDark, toggleMute, theme, setTheme, fontFamily, setFont, soundPack, setSoundPack } = useAppSettings();
+  const { isDark, isMuted, toggleDark, toggleMute, theme, setTheme, fontFamily, setFont, soundPack, setSoundPack, caretSpeed, setCaretSpeed } = useAppSettings();
   const primaryColor = THEME_COLORS[theme]?.primary ?? "#F57644";
 
   const [streak, setStreak] = useState(0);
@@ -223,6 +223,14 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
               <DropdownMenuItem key={s.value} onClick={() => setSoundPack(s.value)} className="text-xs">
                 {s.label}
                 {s.value === soundPack && <span className="ml-auto text-muted-foreground">✓</span>}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">Smooth caret</DropdownMenuLabel>
+            {CARET_SPEED_OPTIONS.map((c) => (
+              <DropdownMenuItem key={c.value} onClick={() => setCaretSpeed(c.value)} className="text-xs">
+                {c.label}
+                {c.value === caretSpeed && <span className="ml-auto text-muted-foreground">✓</span>}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
