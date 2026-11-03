@@ -229,8 +229,6 @@ function TypingArea({ words, phase, onProgress }: {
     if (phase === "racing") {
       finishedReported.current = false;
       prevTypedLenRef.current = 0;
-      spanRefs.current = [];
-      wordRefs.current = [];
       viewportOffsetRef.current = 0;
       if (textRef.current) {
         textRef.current.style.transition = "none";
@@ -267,30 +265,38 @@ function TypingArea({ words, phase, onProgress }: {
     }, 600);
   }, [handleInputChange]);
 
-  // Imperative caret + char updates
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    const textNode  = textRef.current;
-    const caretEl   = caretRef.current;
-    if (!container || !textNode || !caretEl) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const textRect      = textNode.getBoundingClientRect();
+  // Caret lives inside the scrolling text layer: measure with offsets (not
+  // affected by in-flight transforms), move with translate3d, scroll in
+  // whole lines keeping the active line second.
+  const layoutCaret = useCallback(() => {
+    const textNode = textRef.current;
+    const caretEl  = caretRef.current;
+    if (!textNode || !caretEl || text.length === 0) return;
     const span = spanRefs.current[Math.min(currentIndex, text.length - 1)];
     if (!span) return;
 
-    const spanRect = span.getBoundingClientRect();
-    const relY = spanRect.top - textRect.top;
-    const hasStarted = typed.length > 0;
-    const newOffset = hasStarted ? Math.max(0, relY - 32) : 0;
-    viewportOffsetRef.current = newOffset;
-    textNode.style.transform = hasStarted ? `translateY(-${newOffset}px)` : "";
+    const top = span.offsetTop;
+    const h = span.offsetHeight;
+    const lineH = parseFloat(getComputedStyle(textNode).lineHeight) || h;
+    const offset = Math.max(0, Math.floor((top + h / 2) / lineH) - 1) * lineH;
+    if (offset !== viewportOffsetRef.current) {
+      viewportOffsetRef.current = offset;
+      textNode.style.transform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
+    }
 
-    const x = Math.round(currentIndex >= text.length ? spanRect.right - containerRect.left : spanRect.left - containerRect.left);
-    const y = Math.round(spanRect.top - containerRect.top);
-    caretEl.style.left   = `${x}px`;
-    caretEl.style.top    = `${y}px`;
-    caretEl.style.height = `${Math.round(spanRect.height)}px`;
+    const x = currentIndex >= text.length ? span.offsetLeft + span.offsetWidth : span.offsetLeft;
+    caretEl.style.transform = `translate3d(${x}px, ${top}px, 0)`;
+    caretEl.style.height = `${h}px`;
+  }, [currentIndex, text.length]);
+
+  useEffect(() => {
+    window.addEventListener("resize", layoutCaret);
+    return () => window.removeEventListener("resize", layoutCaret);
+  }, [layoutCaret]);
+
+  // Imperative caret + char updates
+  useLayoutEffect(() => {
+    layoutCaret();
 
     // Imperative char updates
     const prevLen = prevTypedLenRef.current;
@@ -342,17 +348,38 @@ function TypingArea({ words, phase, onProgress }: {
       }
       ci = wEnd + 1;
     }
+  }, [typed, text, layoutCaret]);
 
-    // Future line fading — dim lines beyond current + next
-    const lineH = spanRefs.current[0]?.getBoundingClientRect().height ?? 36;
-    for (let wi = 0; wi < wordList.length; wi++) {
-      const wordSpan = wordRefs.current[wi];
-      if (!wordSpan) continue;
-      const wordTop = wordSpan.offsetTop;
-      const lineIdx = Math.floor((wordTop - newOffset) / lineH);
-      wordSpan.style.opacity = lineIdx > 1 ? "0.4" : "";
-    }
-  }, [typed, currentIndex, text]);
+  // Letter spans are built once per text, not on every keystroke
+  const renderedText = useMemo(() => {
+    const wordList = text.split(" ");
+    let charIndex = 0;
+    return wordList.map((word, wi) => {
+      const wStart = charIndex;
+      const wEnd   = charIndex + word.length;
+      const wordChars = word.split("").map((ch, ci) => {
+        const idx = wStart + ci;
+        return (
+          <span key={idx} ref={(n) => { spanRefs.current[idx] = n; }}
+            className="relative inline text-muted-foreground/50"
+          >{ch}</span>
+        );
+      });
+      const spaceIdx = wEnd;
+      charIndex = wEnd + 1;
+      return (
+        <span key={`w${wi}`} ref={(n) => { wordRefs.current[wi] = n; }}
+          className="inline-block whitespace-nowrap">
+          {wordChars}
+          {wi < wordList.length - 1 && (
+            <span ref={(n) => { spanRefs.current[spaceIdx] = n; }}
+              className="relative inline text-muted-foreground/50"
+            >{" "}</span>
+          )}
+        </span>
+      );
+    });
+  }, [text]);
 
   const isDisabled = phase !== "racing";
 
@@ -374,7 +401,7 @@ function TypingArea({ words, phase, onProgress }: {
       {/* Text area — same style as home page */}
       <div
         ref={containerRef}
-        className="relative cursor-text px-4 py-4 font-mono text-xl leading-relaxed"
+        className="relative cursor-text px-4 py-4 font-mono text-xl leading-8"
         onClick={() => !isDisabled && inputRef.current?.focus()}
       >
         <input
@@ -406,45 +433,17 @@ function TypingArea({ words, phase, onProgress }: {
         )}
 
         <div className="relative h-[6rem] overflow-hidden">
-          <div ref={textRef} className="text-viewport">
-            {(() => {
-              const wordList = text.split(" ");
-              let charIndex = 0;
-              return wordList.map((word, wi) => {
-                const wStart = charIndex;
-                const wEnd   = charIndex + word.length;
-                const wordChars = word.split("").map((ch, ci) => {
-                  const idx = wStart + ci;
-                  return (
-                    <span key={idx} ref={(n) => { spanRefs.current[idx] = n; }}
-                      className="relative inline text-muted-foreground/50"
-                    >{ch}</span>
-                  );
-                });
-                const spaceIdx = wEnd;
-                charIndex = wEnd + 1;
-                return (
-                  <span key={`w${wi}`} ref={(n) => { wordRefs.current[wi] = n; }}
-                    className="inline-block whitespace-nowrap">
-                    {wordChars}
-                    {wi < wordList.length - 1 && (
-                      <span ref={(n) => { spanRefs.current[spaceIdx] = n; }}
-                        className="relative inline text-muted-foreground/50"
-                      >{"\u00A0"}</span>
-                    )}
-                  </span>
-                );
-              });
-            })()}
+          <div key={text} ref={textRef} className="text-viewport relative">
+            {renderedText}
+
+            {/* Caret \u2014 inside the scrolling layer so it moves with the text */}
+            <div
+              ref={caretRef}
+              className={cn("pointer-events-none absolute left-0 top-0 -ml-px w-0.5 rounded-full typing-caret typing-caret-blink", isFocused && !isDisabled ? "opacity-100" : "opacity-0")}
+              style={{ backgroundColor: ACCENT }}
+            />
           </div>
         </div>
-
-        {/* Caret */}
-        <div
-          ref={caretRef}
-          className={cn("pointer-events-none absolute w-0.5 rounded-full typing-caret typing-caret-blink", isFocused && !isDisabled ? "opacity-100" : "opacity-0")}
-          style={{ backgroundColor: ACCENT }}
-        />
       </div>
 
       {/* Finished banner */}

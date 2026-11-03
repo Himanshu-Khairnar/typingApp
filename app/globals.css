@@ -146,18 +146,35 @@
   }
 }
 
+/* Only the 50% stop is set, so the fade starts from the caret's own opacity
+   (keeps the translucent block caret translucent). */
 @keyframes caret-blink {
   50% { opacity: 0; }
 }
 
+/* Positioned with transform (GPU-composited) — animating left/top forced a
+   layout recalculation on every frame. */
 .typing-caret {
-  transition: left 100ms ease, top 100ms ease;
+  --caret-duration: 100ms;
+  transition:
+    transform var(--caret-duration) cubic-bezier(0.25, 0.8, 0.35, 1),
+    width var(--caret-duration) ease-out,
+    height var(--caret-duration) ease-out;
+  will-change: transform;
 }
 
 .typing-caret-blink {
-  animation: caret-blink 1.2s step-start infinite;
+  animation: caret-blink 1s ease-in-out infinite;
 }
 
 .text-viewport {
-  transition: transform 150ms ease-out;
+  transition: transform 140ms cubic-bezier(0.25, 0.8, 0.35, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-caret,
+  .text-viewport {
+    transition: none;
+  }
 }

@@ -437,35 +437,40 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     };
   }, []);
 
-  // Imperative caret positioning — runs after every typed change, no setState
-  useLayoutEffect(() => {
-    const container = containerRef.current;
+  // Monkeytype-style caret + line scroll. The caret lives *inside* the
+  // scrolling text layer, so both are measured with offsetLeft/offsetTop
+  // (layout positions, unaffected by in-flight transforms) and moved with
+  // GPU-composited translate3d. The text scrolls in whole-line steps, keeping
+  // the active line as the 2nd visible line.
+  const layoutCaret = useCallback(() => {
     const textNode = textRef.current;
     const caretEl = caretRef.current;
-    if (!container || !textNode || !caretEl) return;
+    if (!textNode || !caretEl || text.length === 0) return;
 
-    const containerRect = container.getBoundingClientRect();
-    const textRect = textNode.getBoundingClientRect();
-    const targetIndex = Math.min(currentIndex, text.length - 1);
-    const activeSpan = spanRefs.current[targetIndex] ?? spanRefs.current[text.length - 1];
-    if (!activeSpan) return;
+    const atEnd = currentIndex >= text.length;
+    const span = spanRefs.current[Math.min(currentIndex, text.length - 1)];
+    if (!span) return;
 
-    const spanRect = activeSpan.getBoundingClientRect();
-    const relY = spanRect.top - textRect.top;
-    const prevOffset = viewportOffsetRef.current;
-    const newOffset = hasStarted ? Math.max(0, relY - 32) : 0;
-    viewportOffsetRef.current = newOffset;
+    const top = span.offsetTop;
+    const h = span.offsetHeight;
+    const lineH = parseFloat(getComputedStyle(textNode).lineHeight) || h;
+    const lineIdx = Math.floor((top + h / 2) / lineH);
+    const offset = Math.max(0, lineIdx - 1) * lineH;
+    if (offset !== viewportOffsetRef.current) {
+      viewportOffsetRef.current = offset;
+      textNode.style.transform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
+    }
 
-    textNode.style.transform = hasStarted ? `translateY(-${newOffset}px)` : "";
+    const x = atEnd ? span.offsetLeft + span.offsetWidth : span.offsetLeft;
+    const y = caretStyle === "underline" ? top + h - 2 : top;
+    caretEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    caretEl.style.height = caretStyle === "underline" ? "2px" : `${h}px`;
+    caretEl.style.width = caretStyle === "beam" ? "" : `${Math.max(span.offsetWidth, 8)}px`;
+  }, [currentIndex, text.length, caretStyle]);
 
-    const x = Math.round(currentIndex >= text.length ? spanRect.right - containerRect.left : spanRect.left - containerRect.left);
-    const y = Math.round(hasStarted
-      ? spanRect.top - containerRect.top + prevOffset - newOffset
-      : spanRect.top - containerRect.top);
-
-    caretEl.style.left = `${x}px`;
-    caretEl.style.top = caretStyle === "underline" ? `${y + Math.round(spanRect.height) - 2}px` : `${y}px`;
-    caretEl.style.height = caretStyle === "underline" ? "2px" : `${Math.round(spanRect.height)}px`;
+  // Runs after every typed change, no setState
+  useLayoutEffect(() => {
+    layoutCaret();
 
     // Imperative char color updates — only touch changed range
     const prevLen = prevTypedLenRef.current;
@@ -523,44 +528,25 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
       }
       ci = wEnd + 1;
     }
-
-    // Future line fading — dim lines beyond current + next
-    const lineH = spanRefs.current[0]?.getBoundingClientRect().height ?? 36;
-    for (let wi = 0; wi < wordList.length; wi++) {
-      const wordSpan = wordRefs.current[wi];
-      if (!wordSpan) continue;
-      const wordTop = wordSpan.offsetTop;
-      const lineIdx = Math.floor((wordTop - newOffset) / lineH);
-      wordSpan.style.opacity = lineIdx > 1 ? "0.4" : "";
-    }
-  }, [typed, caretStyle, testMode, hasStarted, currentIndex, text]);
-
-  const imperativeCaretUpdate = useCallback(() => {
-    const container = containerRef.current;
-    const textNode = textRef.current;
-    const caretEl = caretRef.current;
-    if (!container || !textNode || !caretEl) return;
-    const containerRect = container.getBoundingClientRect();
-    const textRect = textNode.getBoundingClientRect();
-    const targetIndex = Math.min(currentIndex, text.length - 1);
-    const activeSpan = spanRefs.current[targetIndex] ?? spanRefs.current[text.length - 1];
-    if (!activeSpan) return;
-    const spanRect = activeSpan.getBoundingClientRect();
-    const relY = spanRect.top - textRect.top;
-    const newOffset = hasStarted ? Math.max(0, relY - 32) : 0;
-    viewportOffsetRef.current = newOffset;
-    textNode.style.transform = hasStarted ? `translateY(-${newOffset}px)` : "";
-    const x = Math.round(currentIndex >= text.length ? spanRect.right - containerRect.left : spanRect.left - containerRect.left);
-    const y = Math.round(spanRect.top - containerRect.top);
-    caretEl.style.left = `${x}px`;
-    caretEl.style.top = caretStyle === "underline" ? `${y + Math.round(spanRect.height) - 2}px` : `${y}px`;
-    caretEl.style.height = caretStyle === "underline" ? "2px" : `${Math.round(spanRect.height)}px`;
-  }, [currentIndex, text.length, hasStarted, caretStyle]);
+  }, [typed, testMode, text, layoutCaret]);
 
   useEffect(() => {
-    window.addEventListener("resize", imperativeCaretUpdate);
-    return () => window.removeEventListener("resize", imperativeCaretUpdate);
-  }, [imperativeCaretUpdate]);
+    window.addEventListener("resize", layoutCaret);
+    return () => window.removeEventListener("resize", layoutCaret);
+  }, [layoutCaret]);
+
+  // Build the letter spans once per text — re-creating hundreds of elements
+  // on every keystroke made React reconcile the whole passage per key press.
+  const renderedText = useMemo(
+    () => testMode === "code"
+      ? text.split("").map((char, index) => (
+        <span key={index} ref={(node) => { spanRefs.current[index] = node; }}
+          className="relative inline text-muted-foreground/50"
+        >{char}</span>
+      ))
+      : renderWords(text, spanRefs, wordRefs),
+    [text, testMode],
+  );
 
   const resetVisuals = useCallback(() => {
     // Reset imperative DOM changes that React doesn't know about
@@ -1109,27 +1095,24 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
           >
             {/* keyed by text: a new text remounts every span so no stale
                 imperative colouring survives (e.g. zen auto-continue) */}
-            <div key={text} ref={textRef} className={cn("text-viewport", testMode === "code" && "whitespace-pre")}>
-              {testMode === "code" ? text.split("").map((char, index) => (
-                <span key={index} ref={(node) => { spanRefs.current[index] = node; }}
-                  className="relative inline text-muted-foreground/50"
-                >{char}</span>
-              )) : renderWords(text, spanRefs, wordRefs)}
+            <div key={text} ref={textRef} className={cn("text-viewport relative", testMode === "code" && "whitespace-pre")}>
+              {renderedText}
+
+              {/* Caret — inside the scrolling layer so it moves with the text */}
+              <div
+                ref={caretRef}
+                className={cn(
+                  "pointer-events-none absolute left-0 top-0 typing-caret typing-caret-blink",
+                  caretStyle === "beam" && "-ml-px w-0.5 rounded-full",
+                  caretStyle === "block" && "opacity-25 rounded-sm",
+                  caretStyle === "underline" && "rounded-sm",
+                  // last so it wins over the block caret's opacity-25
+                  !isFocused && "opacity-0",
+                )}
+                style={{ backgroundColor: themeColors.primary }}
+              />
             </div>
           </motion.div>
-
-          {/* Caret */}
-          <div
-            ref={caretRef}
-            className={cn(
-              "pointer-events-none absolute typing-caret typing-caret-blink",
-              isFocused ? "opacity-100" : "opacity-0",
-              caretStyle === "beam" && "w-0.5 rounded-full",
-              caretStyle === "block" && "w-[1ch] opacity-25 rounded-sm",
-              caretStyle === "underline" && "w-[1ch] rounded-sm",
-            )}
-            style={{ backgroundColor: themeColors.primary }}
-          />
         </div>
       )}
       {/* Zen mode — floating home button */}
