@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import Link from "next/link";
-import { ArrowLeft, Trophy, Medal, Crown } from "lucide-react";
+import { Medal, Crown } from "lucide-react";
 import { SiteNavbar } from "@/components/site-navbar";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
@@ -10,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
@@ -49,7 +48,7 @@ function SkeletonRow() {
   );
 }
 
-function RankBadge({ rank, accent }: { rank: number; accent: string }) {
+function RankBadge({ rank }: { rank: number }) {
   if (rank === 1) return <Crown className="h-4 w-4" style={{ color: "#FFD700" }} />;
   if (rank === 2) return <Medal className="h-4 w-4" style={{ color: "#C0C0C0" }} />;
   if (rank === 3) return <Medal className="h-4 w-4" style={{ color: "#CD7F32" }} />;
@@ -241,7 +240,7 @@ export default function LeaderboardPage() {
                     >
                       {/* Rank */}
                       <span className="w-8 flex items-center justify-center">
-                        <RankBadge rank={entry.rank} accent={ACCENT} />
+                        <RankBadge rank={entry.rank} />
                       </span>
 
                       {/* Avatar + Username */}

@@ -20,7 +20,6 @@ import {
   type TestMode,
   type Language,
 } from "@/lib/words";
-import { useRaceBroadcast } from "@/hooks/use-race-broadcast";
 import { SiteNavbar } from "@/components/site-navbar";
 import type { CodeLanguage } from "@/lib/words";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
@@ -63,10 +62,6 @@ function generateSeed() {
   let seed = "";
   for (let i = 0; i < 5; i += 1) seed += chars[Math.floor(Math.random() * chars.length)];
   return seed;
-}
-
-function generatePlayerId() {
-  return `p_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function renderWords(
@@ -133,24 +128,13 @@ const LiveStatsBar = memo(function LiveStatsBar({
   wpmOverTime: TimePoint[]; themeColor: string;
 }) {
   const elapsedMs = useTypingTimer();
-  const correct = useMemo(() => {
-    let n = 0;
-    for (let i = 0; i < typed.length; i++) if (typed[i] === text[i]) n++;
-    return n;
-  }, [typed, text]);
-  // Measured against the live clock so pausing visibly drops the number
-  const liveWpm = elapsedMs >= 1000 ? Math.round(correct / 5 / (elapsedMs / 60000)) : 0;
   return (
     <div className={cn("mb-3 flex h-8 items-center gap-5 text-sm transition-opacity duration-200", hasStarted && !zenMode ? "opacity-100" : "opacity-0 pointer-events-none")}>
       {testMode === "time" && (
-        <span className="text-2xl font-bold tabular-nums leading-none" style={{ color: themeColor }}>
-          {Math.max(0, timeLimit - Math.floor(elapsedMs / 1000))}
+        <span className="tabular-nums font-semibold text-foreground">
+          {Math.max(0, timeLimit - Math.floor(elapsedMs / 1000))}<span className="text-xs font-normal text-muted-foreground">s</span>
         </span>
       )}
-      <span className="tabular-nums leading-none text-muted-foreground">
-        <span className="text-2xl font-bold" style={{ color: themeColor }}>{liveWpm}</span>
-        <span className="ml-1 text-xs">wpm</span>
-      </span>
       {testMode === "words" && (
         <span className="tabular-nums text-xs text-muted-foreground">
           {Math.max(0, text.split(" ").length - (typed.split(" ").length - 1))} <span>words left</span>
@@ -301,8 +285,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client-only randomisation
     setSeed(generateSeed());
   }, []);
-  const [roomCode] = useState("");
-  const [playerId] = useState(() => generatePlayerId());
 
   const [testMode, setTestMode] = useState<TestMode>("time");
   const [timeLimit, setTimeLimit] = useState(30);
@@ -312,7 +294,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   const [includePunctuation, setIncludePunctuation] = useState(false);
   const [includeNumbers, setIncludeNumbers] = useState(false);
   const [codeLanguage, setCodeLanguage] = useState<CodeLanguage>("javascript");
-  const [customTextInput] = useState("");
 
   // UI state
   const [caretStyle, setCaretStyle] = useState<CaretStyle>("beam");
@@ -349,10 +330,9 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
       language,
       includePunctuation: testMode === "custom" || testMode === "code" ? false : includePunctuation,
       includeNumbers: testMode === "custom" || testMode === "code" ? false : includeNumbers,
-      customText: testMode === "custom" ? customTextInput : undefined,
       codeLanguage: testMode === "code" ? codeLanguage : undefined,
     }),
-    [testMode, timeLimit, wordCount, language, includePunctuation, includeNumbers, customTextInput, codeLanguage],
+    [testMode, timeLimit, wordCount, language, includePunctuation, includeNumbers, codeLanguage],
   );
 
   const words = useMemo(() => generateText(testConfig, seed), [testConfig, seed]);
@@ -366,7 +346,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   const prevExtrasRef = useRef<string[]>([]);
   const prevTypedLenRef = useRef(0);
   const caretRef = useRef<HTMLDivElement>(null);
-  const viewportOffsetRef = useRef(0);
 
   const {
     text,
@@ -387,7 +366,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     elapsedMs,
     isRunning,
     startedAt,
-    racePayload,
   } = useTypingEngine(words, { onKeystroke: handleKeystroke, allowExtras: testMode !== "code" });
 
   // Personal best for the *same* test config — comparing a 15s test against
@@ -488,9 +466,8 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
     const lineH = parseFloat(getComputedStyle(textNode).lineHeight) || h;
     const lineIdx = Math.floor((top + h / 2) / lineH);
     const offset = Math.max(0, lineIdx - 1) * lineH;
-    // Compare against the element itself, not a cached offset: other effects
-    // reset the cache, which left a stale scroll on a fresh test.
-    viewportOffsetRef.current = offset;
+    // Compare against the element itself — a cached offset went stale when
+    // other effects reset it, leaving a fresh test scrolled.
     const nextTransform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
     if (textNode.style.transform !== nextTransform) textNode.style.transform = nextTransform;
 
@@ -619,7 +596,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
       textRef.current.style.transition = "";
     }
     prevTypedLenRef.current = 0;
-    viewportOffsetRef.current = 0;
   }, [text]);
 
   const restartSame = useCallback(() => {
@@ -724,8 +700,6 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
 
     addEntry({ mode: testMode, timeLimit: testMode === "time" ? timeLimit : undefined, wordCount: testMode === "words" ? wordCount : undefined, language, netWpm: roundedWpm, grossWpm: Math.max(0, Math.round(grossWpm)), accuracy: Number(accuracy.toFixed(1)), elapsedMs, consistency, correctChars, incorrectChars });
   }, [zenMode, isComplete, timeIsUp, isRunning, startedAt, typed.length, seed, netWpm, accuracy, elapsedMs, personalBest, addEntry, testMode, timeLimit, wordCount, language, grossWpm, consistency, correctChars, incorrectChars]);
-
-  useRaceBroadcast({ roomCode, playerId, payload: racePayload, enabled: roomCode.length > 0 });
 
   const themeColors = THEME_COLORS[theme];
 

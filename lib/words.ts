@@ -520,11 +520,3 @@ export function generateText(config: TestConfig, seed?: string): string[] {
 
   return words;
 }
-
-// Legacy helper
-export function pickRandomWords(count: number, seed?: string) {
-  return generateText(
-    { mode: "words", wordCount: count, language: "english", includePunctuation: false, includeNumbers: false },
-    seed,
-  );
-}

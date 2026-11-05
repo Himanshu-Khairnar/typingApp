@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Search, UserPlus, Users, Clock, Swords,
+  Search, UserPlus, Users, Clock, Swords,
   Check, X, Loader2, Send,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -18,7 +17,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
 import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
 import { sendChallengeNotification } from "@/hooks/use-challenge-notifications";
 

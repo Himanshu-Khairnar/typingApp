@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTypingStore } from "@/lib/typing-store";
 
-export type CharState = "untyped" | "correct" | "incorrect";
-
 // ---------------------------------------------------------------------------
 // Separate timer hook — only components that display elapsed time should call
 // this. The typing area itself does NOT need to re-render on every 100ms tick.
@@ -170,15 +168,6 @@ export function useTypingEngine(
     [reset, setTyped, setExtras, start, text, wordAt, allowExtras, onKeystroke],
   );
 
-  const charStates = useMemo<CharState[]>(
-    () =>
-      text.split("").map((char, index) => {
-        if (index >= typed.length) return "untyped";
-        return typed[index] === char ? "correct" : "incorrect";
-      }),
-    [text, typed],
-  );
-
   const totals = useMemo(() => {
     let correct = 0;
     let incorrect = 0;
@@ -211,36 +200,10 @@ export function useTypingEngine(
       : ((totalKeystrokesRef.current - totalErrorsRef.current) / totalKeystrokesRef.current) * 100;
   const progress = text.length === 0 ? 0 : (typed.length / text.length) * 100;
 
-  const racePayload = useMemo(
-    () => ({
-      progress,
-      grossWpm,
-      netWpm,
-      accuracy,
-      typedChars: typed.length,
-      correctChars: totals.correct,
-      incorrectChars: totals.incorrect,
-      elapsedMs,
-      startedAt,
-    }),
-    [
-      progress,
-      grossWpm,
-      netWpm,
-      accuracy,
-      typed.length,
-      totals.correct,
-      totals.incorrect,
-      elapsedMs,
-      startedAt,
-    ],
-  );
-
   return {
     text,
     typed,
     extras,
-    charStates,
     currentIndex: typed.length,
     isComplete: typed.length >= text.length,
     isFocused,
@@ -257,6 +220,5 @@ export function useTypingEngine(
     progress,
     correctChars: totals.correct,
     incorrectChars: totals.incorrect,
-    racePayload,
   };
 }

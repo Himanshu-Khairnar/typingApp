@@ -701,7 +701,7 @@ interface KeyProps {
 }
 
 function Key({ width = 50, children, className, keyCode }: KeyProps) {
-  const { themeName, isDark, pressedKeys, pressKey, releaseKey, triggerPointerHaptic } =
+  const { themeName, pressedKeys, pressKey, releaseKey, triggerPointerHaptic } =
     useKeyboardContext();
   const isPressed = keyCode ? pressedKeys.has(keyCode) : false;
   const keyVariantSlot = resolveKeyVariant(themeName, keyCode);

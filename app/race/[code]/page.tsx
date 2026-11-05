@@ -206,7 +206,6 @@ function TypingArea({ words, phase, onProgress }: {
   const prevTypedLenRef = useRef(0);
   const caretRef  = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const viewportOffsetRef = useRef(0);
   const finishedReported = useRef(false);
   const blinkResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -218,7 +217,7 @@ function TypingArea({ words, phase, onProgress }: {
     useTypingStore.getState().reset(wordsKey);
   }
 
-  const { text, typed, currentIndex, isComplete, isFocused, setFocused, handleInputChange, reset, grossWpm, netWpm, accuracy, progress } = useTypingEngine(words);
+  const { text, typed, currentIndex, isComplete, isFocused, setFocused, handleInputChange, grossWpm, netWpm, accuracy, progress } = useTypingEngine(words);
 
   const statsRef = useRef({ progress, netWpm, grossWpm, accuracy });
   statsRef.current = { progress, netWpm, grossWpm, accuracy };
@@ -230,11 +229,10 @@ function TypingArea({ words, phase, onProgress }: {
     if (phase === "racing") {
       finishedReported.current = false;
       prevTypedLenRef.current = 0;
-      viewportOffsetRef.current = 0;
       if (textRef.current) {
         textRef.current.style.transition = "none";
         textRef.current.style.transform = "";
-        textRef.current.offsetHeight;
+        void textRef.current.offsetHeight; // force reflow
         textRef.current.style.transition = "";
       }
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -280,9 +278,6 @@ function TypingArea({ words, phase, onProgress }: {
     const h = span.offsetHeight;
     const lineH = parseFloat(getComputedStyle(textNode).lineHeight) || h;
     const offset = Math.max(0, Math.floor((top + h / 2) / lineH) - 1) * lineH;
-    // Compare against the element itself, not a cached offset: other effects
-    // reset the cache, which left a stale scroll on a fresh test.
-    viewportOffsetRef.current = offset;
     const nextTransform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
     if (textNode.style.transform !== nextTransform) textNode.style.transform = nextTransform;
 
@@ -614,11 +609,6 @@ export default function RaceRoomPage() {
     );
   }
 
-  const configBadges = (cfg: RaceConfig) => [
-    cfg.mode === "words" ? `${cfg.wordCount} words` : `${cfg.duration}s`,
-    cfg.punctuation && "punctuation",
-    cfg.numbers && "numbers",
-  ].filter(Boolean) as string[];
 
   return (
     <div className="min-h-screen bg-background">

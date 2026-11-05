@@ -6,7 +6,6 @@ import { Plus, LogIn } from "lucide-react";
 import { SiteNavbar } from "@/components/site-navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useAppSettings, THEME_COLORS } from "@/lib/app-settings";
 
