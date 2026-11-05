@@ -1,4 +1,6 @@
-// Hand-written types matching supabase/schema.sql + migrations/001_features.sql
+// Hand-written types matching supabase/schema.sql + migrations/001_features.sql.
+// Keep the Relationships / Enums / CompositeTypes keys: without them
+// supabase-js resolves every query to `never`.
 
 export type Database = {
   public: {
@@ -12,8 +14,11 @@ export type Database = {
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database["public"]["Tables"]["profiles"]["Row"], "created_at" | "updated_at">;
+        // avatar_url and settings have column defaults
+        Insert: Omit<Database["public"]["Tables"]["profiles"]["Row"], "created_at" | "updated_at" | "avatar_url" | "settings">
+          & Partial<Pick<Database["public"]["Tables"]["profiles"]["Row"], "avatar_url" | "settings">>;
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+        Relationships: [];
       };
       results: {
         Row: {
@@ -35,6 +40,7 @@ export type Database = {
         };
         Insert: Omit<Database["public"]["Tables"]["results"]["Row"], "id" | "created_at" | "is_daily"> & { is_daily?: boolean };
         Update: Partial<Database["public"]["Tables"]["results"]["Insert"]>;
+        Relationships: [];
       };
       race_sessions: {
         Row: {
@@ -46,6 +52,7 @@ export type Database = {
         };
         Insert: Omit<Database["public"]["Tables"]["race_sessions"]["Row"], "id">;
         Update: Partial<Database["public"]["Tables"]["race_sessions"]["Insert"]>;
+        Relationships: [];
       };
       race_results: {
         Row: {
@@ -61,6 +68,7 @@ export type Database = {
         };
         Insert: Omit<Database["public"]["Tables"]["race_results"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["race_results"]["Insert"]>;
+        Relationships: [];
       };
       daily_challenges: {
         Row: {
@@ -72,6 +80,7 @@ export type Database = {
         };
         Insert: Omit<Database["public"]["Tables"]["daily_challenges"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["daily_challenges"]["Insert"]>;
+        Relationships: [];
       };
       daily_results: {
         Row: {
@@ -85,6 +94,7 @@ export type Database = {
         };
         Insert: Omit<Database["public"]["Tables"]["daily_results"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["daily_results"]["Insert"]>;
+        Relationships: [];
       };
       streaks: {
         Row: {
@@ -96,6 +106,7 @@ export type Database = {
         };
         Insert: Database["public"]["Tables"]["streaks"]["Row"];
         Update: Partial<Database["public"]["Tables"]["streaks"]["Insert"]>;
+        Relationships: [];
       };
       achievements: {
         Row: {
@@ -106,6 +117,7 @@ export type Database = {
         };
         Insert: Omit<Database["public"]["Tables"]["achievements"]["Row"], "id" | "earned_at">;
         Update: Partial<Database["public"]["Tables"]["achievements"]["Insert"]>;
+        Relationships: [];
       };
       friendships: {
         Row: {
@@ -117,6 +129,7 @@ export type Database = {
         };
         Insert: Omit<Database["public"]["Tables"]["friendships"]["Row"], "id" | "created_at" | "status"> & { status?: "pending" | "accepted" };
         Update: Partial<Database["public"]["Tables"]["friendships"]["Insert"]>;
+        Relationships: [];
       };
     };
     Views: {
@@ -136,6 +149,7 @@ export type Database = {
           created_at: string;
           rank: number;
         };
+        Relationships: [];
       };
     };
     Functions: {
@@ -164,5 +178,7 @@ export type Database = {
         }[];
       };
     };
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 };

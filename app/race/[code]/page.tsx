@@ -158,7 +158,7 @@ function Results({ players, myId, onRaceAgain, isHost }: {
       {/* Race again / leave */}
       <div className="rounded-xl border border-border/40 bg-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border/30">
-          <p className="text-sm font-semibold">What's next?</p>
+          <p className="text-sm font-semibold">What&apos;s next?</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             {players.length} player{players.length !== 1 ? "s" : ""} in room
           </p>
@@ -237,14 +237,12 @@ function TypingArea({ words, phase, onProgress }: {
       }
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   useEffect(() => {
     if (phase !== "racing" || isComplete) return;
     const id = setInterval(() => { onProgress({ ...statsRef.current, finishedAt: null }); }, 500);
     return () => clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, isComplete, onProgress]);
 
   useEffect(() => {

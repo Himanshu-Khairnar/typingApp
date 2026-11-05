@@ -28,7 +28,7 @@ export function SettingsSync() {
       .select("settings")
       .eq("id", user.id)
       .single()
-      .then(({ data }: { data: any }) => {
+      .then(({ data }) => {
         if (cancelled) return;
         // Only allow saving once remote settings are applied — otherwise local
         // defaults could overwrite the user's saved settings on slow networks.
@@ -58,7 +58,7 @@ export function SettingsSync() {
 
     savingRef.current = true;
     const timer = setTimeout(async () => {
-      await (supabase.from("profiles") as any)
+      await supabase.from("profiles")
         .update({ settings: { theme, isDark, isMuted, fontFamily, soundPack } })
         .eq("id", user.id);
       savingRef.current = false;

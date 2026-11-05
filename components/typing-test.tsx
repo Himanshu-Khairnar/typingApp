@@ -282,7 +282,7 @@ export function TypingTest({ onResultVisibleChange, onZenModeChange }: TypingTes
   // caused a hydration error and a full client re-render of the page.
   const [seed, setSeed] = useState("TYPEA");
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client-only randomisation
+    // one-time client-only randomisation
     setSeed(generateSeed());
   }, []);
 

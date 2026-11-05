@@ -22,7 +22,6 @@ type LeaderboardEntry = {
   accuracy: number;
   mode: string;
   time_limit: number | null;
-  word_count: number | null;
   created_at: string;
 };
 
@@ -76,7 +75,7 @@ export default function LeaderboardPage() {
     setLoading(true);
     try {
       const periodMap: Record<Period, string> = { today: "daily", week: "weekly", all: "all" };
-      const { data, error } = await (supabase.rpc as any)("get_leaderboard", {
+      const { data, error } = await supabase.rpc("get_leaderboard", {
         p_mode: modeFilter === "all" ? null : modeFilter,
         p_time_limit: modeFilter === "time" ? duration : null,
         p_period: periodMap[period],
@@ -88,7 +87,7 @@ export default function LeaderboardPage() {
         setEntries([]);
       } else {
         setEntries(
-          (data ?? []).map((row: any, i: number) => ({
+          (data ?? []).map((row, i) => ({
             rank: i + 1,
             user_id: row.user_id,
             username: row.username ?? "Anonymous",
@@ -96,7 +95,6 @@ export default function LeaderboardPage() {
             accuracy: Number(row.accuracy),
             mode: row.mode ?? "time",
             time_limit: row.time_limit,
-            word_count: row.word_count,
             created_at: row.created_at,
           }))
         );
@@ -285,7 +283,6 @@ export default function LeaderboardPage() {
                         <Badge variant="secondary" className="text-[10px] capitalize">
                           {entry.mode}
                           {entry.time_limit ? ` ${entry.time_limit}s` : ""}
-                          {entry.word_count ? ` ${entry.word_count}w` : ""}
                         </Badge>
                       </span>
 

@@ -38,6 +38,12 @@ type SearchResult = {
   username: string;
 };
 
+/** Supabase errors are plain objects with a message, not Error instances. */
+function errorMessage(err: unknown): string | undefined {
+  if (err && typeof err === "object" && "message" in err && typeof err.message === "string") return err.message;
+  return undefined;
+}
+
 function generateRoomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
@@ -73,28 +79,28 @@ export default function FriendsPage() {
     try {
       // Accepted friends (where I'm requester)
       const { data: sentAccepted } = await supabase
-        .from("friendships" as any)
+        .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("requester_id", user.id)
         .eq("status", "accepted") as { data: FriendshipRow[] | null };
 
       // Accepted friends (where I'm addressee)
       const { data: receivedAccepted } = await supabase
-        .from("friendships" as any)
+        .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("addressee_id", user.id)
         .eq("status", "accepted") as { data: FriendshipRow[] | null };
 
       // Pending incoming requests
       const { data: incoming } = await supabase
-        .from("friendships" as any)
+        .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("addressee_id", user.id)
         .eq("status", "pending") as { data: FriendshipRow[] | null };
 
       // Pending outgoing requests (sent by me)
       const { data: outgoing } = await supabase
-        .from("friendships" as any)
+        .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("requester_id", user.id)
         .eq("status", "pending") as { data: FriendshipRow[] | null };
@@ -239,7 +245,7 @@ export default function FriendsPage() {
     try {
       // Check if request already exists
       const { data: existing } = await supabase
-        .from("friendships" as any)
+        .from("friendships")
         .select("id")
         .or(
           `and(requester_id.eq.${user.id},addressee_id.eq.${friendId}),and(requester_id.eq.${friendId},addressee_id.eq.${user.id})`
@@ -252,7 +258,7 @@ export default function FriendsPage() {
         return;
       }
 
-      const { error } = await (supabase.from("friendships" as any) as any).insert({
+      const { error } = await supabase.from("friendships").insert({
         requester_id: user.id,
         addressee_id: friendId,
       });
@@ -261,8 +267,8 @@ export default function FriendsPage() {
       toast.success("Friend request sent!");
       setSearchResults((prev) => prev.filter((r) => r.id !== friendId));
       fetchFriends(); // show it in the Sent tab right away
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to send friend request");
+    } catch (err) {
+      toast.error(errorMessage(err) ?? "Failed to send friend request");
     } finally {
       setSendingRequest(null);
     }
@@ -272,16 +278,16 @@ export default function FriendsPage() {
   const handleAccept = async (requestId: string) => {
     setProcessingId(requestId);
     try {
-      const { error } = await (supabase
-        .from("friendships" as any) as any)
+      const { error } = await supabase
+        .from("friendships")
         .update({ status: "accepted" })
         .eq("id", requestId);
 
       if (error) throw error;
       toast.success("Friend request accepted!");
       fetchFriends();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to accept request");
+    } catch (err) {
+      toast.error(errorMessage(err) ?? "Failed to accept request");
     } finally {
       setProcessingId(null);
     }
@@ -291,16 +297,16 @@ export default function FriendsPage() {
   const handleDecline = async (requestId: string) => {
     setProcessingId(requestId);
     try {
-      const { error } = await (supabase
-        .from("friendships" as any) as any)
+      const { error } = await supabase
+        .from("friendships")
         .delete()
         .eq("id", requestId);
 
       if (error) throw error;
       toast.info("Friend request declined.");
       fetchFriends();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to decline request");
+    } catch (err) {
+      toast.error(errorMessage(err) ?? "Failed to decline request");
     } finally {
       setProcessingId(null);
     }
@@ -310,16 +316,16 @@ export default function FriendsPage() {
   const handleCancel = async (requestId: string) => {
     setProcessingId(requestId);
     try {
-      const { error } = await (supabase
-        .from("friendships" as any) as any)
+      const { error } = await supabase
+        .from("friendships")
         .delete()
         .eq("id", requestId);
 
       if (error) throw error;
       toast.info("Friend request cancelled.");
       fetchFriends();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to cancel request");
+    } catch (err) {
+      toast.error(errorMessage(err) ?? "Failed to cancel request");
     } finally {
       setProcessingId(null);
     }
@@ -462,7 +468,7 @@ export default function FriendsPage() {
 
             {searchResults.length === 0 && searchQuery.trim() && !searching && (
               <p className="text-center text-xs text-muted-foreground py-3">
-                No users found matching "{searchQuery}".
+                No users found matching &ldquo;{searchQuery}&rdquo;.
               </p>
             )}
           </CardContent>

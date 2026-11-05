@@ -71,13 +71,13 @@ export function SiteNavbar({ className, children }: SiteNavbarProps) {
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    (supabase.from("streaks" as never) as any).select("current_streak, last_test_date").eq("user_id", userId).maybeSingle()
-      .then(({ data }: any) => {
+    supabase.from("streaks").select("current_streak, last_test_date").eq("user_id", userId).maybeSingle()
+      .then(({ data }) => {
         if (!cancelled) setStreak(effectiveStreak(data?.current_streak, data?.last_test_date));
       });
-    (supabase.from("friendships" as never) as any).select("id", { count: "exact", head: true })
+    supabase.from("friendships").select("id", { count: "exact", head: true })
       .eq("addressee_id", userId).eq("status", "pending")
-      .then(({ count }: any) => { if (!cancelled) setPendingFriends(count ?? 0); });
+      .then(({ count }) => { if (!cancelled) setPendingFriends(count ?? 0); });
     return () => { cancelled = true; };
   }, [userId]);
 

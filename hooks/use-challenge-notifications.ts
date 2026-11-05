@@ -14,12 +14,14 @@ export type ChallengePayload = {
  */
 export function useChallengeNotifications() {
   const { user } = useAuth();
+  // Keyed on the id: the user object changes identity on every token refresh
+  const userId = user?.id;
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
 
-    const channel = supabase.channel(`challenges:${user.id}`, {
+    const channel = supabase.channel(`challenges:${userId}`, {
       config: { broadcast: { self: false } },
     });
     channelRef.current = channel;
@@ -43,7 +45,7 @@ export function useChallengeNotifications() {
       channel.unsubscribe();
       channelRef.current = null;
     };
-  }, [user?.id]);
+  }, [userId]);
 }
 
 /**

@@ -77,11 +77,11 @@ export default function ProfilePage() {
       .order("created_at", { ascending: false })
       .limit(200)
       .then(({ data }) => { setResults(data ?? []); setFetching(false); });
-    (supabase.from("streaks" as any) as any)
+    supabase.from("streaks")
       .select("current_streak, longest_streak, last_test_date")
       .eq("user_id", user.id)
       .maybeSingle()
-      .then(({ data }: any) => {
+      .then(({ data }) => {
         // current_streak is only recalculated on insert; a lapsed streak is 0
         if (data) setStreak({ current: effectiveStreak(data.current_streak, data.last_test_date), longest: data.longest_streak });
       });
@@ -239,7 +239,7 @@ export default function ProfilePage() {
                         <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, opacity: 0.4 }} width={32} domain={["auto", "auto"]} />
                         <Tooltip
                           contentStyle={{ background: "hsl(var(--background))", border: `1px solid ${ACCENT}40`, borderRadius: 8, fontSize: 12 }}
-                          formatter={(v: any) => [`${v} wpm`, "WPM"]}
+                          formatter={(v) => [`${v} wpm`, "WPM"]}
                           labelFormatter={(l) => `Test #${l}`}
                           cursor={{ stroke: ACCENT, strokeOpacity: 0.15, strokeWidth: 1 }}
                         />
